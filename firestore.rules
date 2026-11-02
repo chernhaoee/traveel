@@ -50,10 +50,10 @@ service cloud.firestore {
       allow list, create, update, delete: if isAdmin();
     }
 
-    // Activity log: Admin + Planners read and add; nobody can edit or delete.
+    // Activity log: only the Owner reads it; everyone's changes (incl. name picks) get logged. Nobody can edit or delete.
     match /audit/{id} {
-      allow read: if isPlanner();
-      allow create: if isPlanner() && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin();
+      allow create: if isMember() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if false;
     }
 
