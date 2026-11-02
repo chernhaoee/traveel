@@ -172,7 +172,7 @@ ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;f
 <body>
 <header class="top"><div class="wrap">
   <div class="brand"><h1 id="tripName">Traveel</h1><p id="tripSub"></p></div>
-  <span class="chip" id="roleChip">Loading</span>
+  <button class="chip" id="roleChip" type="button" title="Your account" style="cursor:pointer;font:inherit">Loading</button>
 </div></header>
 
 <main><div class="wrap" id="screen"></div></main>
@@ -408,7 +408,7 @@ function memberSheet(uid){
 }
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
-  if(!V.length) return S.ready?`<div class="empty">No days yet.${W()?" Trip days will appear here once added.":""}</div>`:`<div class="empty">Loading the plan…</div>`;
+  if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Admin loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
   if(!V.find(d=>d.id===S.dayId)){ const t=todayJST(); S.dayId=(V.find(d=>d.date===t)||V[0]).id; }
   const d=V.find(x=>x.id===S.dayId), idx=S.days.indexOf(d);
   const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}</button>`).join("");
@@ -909,6 +909,7 @@ function personSheet(id){
 document.addEventListener("click",async ev=>{
   const t=ev.target;
   if(t.closest("[data-stop]")) return;
+  if(t.closest("#roleChip")){ if(S.member){S.tab="trip";ls.set("tab","trip");render();window.scrollTo(0,0);} return; }
   const tab=t.closest("nav.tabs button"); if(tab){S.tab=tab.dataset.tab;ls.set("tab",S.tab);render();window.scrollTo(0,0);return}
   if(t.closest("#sheetRoot")) return;
   const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render();return}
