@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Traveel</title>
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#202124" media="(prefers-color-scheme: dark)">
@@ -152,8 +152,8 @@ details.note .ed{padding:0 14px 12px}
 input[type=color]{width:44px;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:2px;cursor:pointer}
 ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
 /* sheet */
-.sheet{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:color-mix(in srgb,#000 45%,transparent)}
-.panel{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;border-top:2px solid var(--accent);padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.sheet{position:fixed;inset:0;bottom:var(--kb,0px);z-index:50;transition:bottom .15s ease;display:flex;align-items:flex-end;justify-content:center;background:color-mix(in srgb,#000 45%,transparent)}
+.panel{background:var(--bg);width:100%;max-width:640px;max-height:min(90%,calc(var(--vvh,100dvh) - 24px));overflow:auto;border-radius:18px 18px 0 0;border-top:2px solid var(--accent);padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
 .panel .ph{display:flex;align-items:center;gap:10px}
 .panel .ph h2{font-size:18px;flex:1}
 .x{border:0;background:var(--fill);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1}
@@ -199,7 +199,7 @@ ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;f
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, onSnapshot, query, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, onSnapshot, query, orderBy, limit, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const SHARE_URL = location.origin + location.pathname;
 const CONFIGURED = FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && !String(FIREBASE_CONFIG.apiKey).startsWith("PASTE");
@@ -725,6 +725,7 @@ function viewTrip(){
     <div class="seg" role="group">${["traveler","planner"].map(r=>`<button data-invrole="${r}" aria-pressed="${r===ir}">${ROLE_LABEL[r]}</button>`).join("")}</div>
     <div class="hint">${ir==="planner"?"Planners can edit the plan, lists, notes and spending.":"Travelers can view everything but can't change anything."} Send this link on WhatsApp or show the QR. Anyone who opens it signs in with Google and joins as a ${ROLE_LABEL[ir]}.</div>
     ${iv?`<div class="qr" data-qr="${esc(link)}"></div>
+    <button class="btn primary" data-act="shareInvite" data-link="${esc(link)}" data-role="${ir}">Share invite</button>
     <div class="row" style="flex-wrap:nowrap"><input readonly value="${esc(link)}" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--fill);font-size:12.5px"><button class="btn small" data-act="copyInvite" data-link="${esc(link)}">Copy</button></div>
     <div class="row"><div class="spacer"></div><button class="btn small plain" data-act="resetInvite" data-role="${ir}">Reset link</button></div>
     <div class="hint">Reset if the link got forwarded to someone it shouldn't. The old link stops working; people who already joined stay in.</div>`:`<div class="muted small">Making the link…</div>`}
@@ -745,7 +746,7 @@ function viewTrip(){
   ${(S.meta.addresses||[]).length?`<div class="card section"><h3>Address cards</h3><div class="hint">Big Japanese address to show a taxi driver or the luggage counter.</div><div class="row">${S.meta.addresses.map(a=>`<button class="btn small plain" data-addr="${esc(a.id)}">🚕 ${esc(a.label)}</button>`).join("")}</div></div>`:""}
   <div class="card section">
     <div class="row"><h3>Tickets & bookings</h3><div class="spacer"></div>${S.canWrite?`<button class="btn small" data-act="addWallet">+ Upload</button>`:""}</div>
-    ${S.wallet.length?`<div class="list">${S.wallet.map(w=>`<button class="li tap" data-wallet="${esc(w.id)}"><div class="main"><div class="ti">🎫 ${esc(w.title)}</div><div class="sub">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${isImg(w)?"Image":"PDF"}</div></div></button>`).join("")}</div>`:`<div class="muted small">${S.canWrite?"Upload screenshots of shinkansen QR codes, bus tickets, hotel confirmations, Disney tickets. They also show on the right day in the Plan.":"Nothing uploaded yet."}</div>`}
+    ${S.wallet.length?`<div class="list">${S.wallet.map(w=>`<button class="li tap" data-wallet="${esc(w.id)}"><div class="main"><div class="ti">🎫 ${esc(w.title)}</div><div class="sub">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${isImg(w)?"Image":"PDF"}${visAll(w)?"":` · ${esc(visLabel(w))}`}</div></div></button>`).join("")}</div>`:`<div class="muted small">${S.canWrite?"Upload screenshots of shinkansen QR codes, bus tickets, hotel confirmations, Disney tickets. They also show on the right day in the Plan.":"Nothing uploaded yet."}</div>`}
   </div>
   ${S.isOwner?`<div class="card section"><div class="row"><h3>Activity</h3><div class="spacer"></div><span class="small muted">${S.audit.length?`Latest ${S.audit.length}`:""}</span></div>${S.audit.length?`<div class="audit">${S.audit.map(x=>`<div class="arow"><div class="atext"><strong>${esc(x.who||(S.members.find(m=>m.id===x.uid)?mname(S.members.find(m=>m.id===x.uid)):"")||"Someone")}</strong> ${esc((x.a||"").toLowerCase())}${x.t?` <span class="muted">· ${esc(x.t)}</span>`:""}</div><div class="atime">${esc(ago(x.at))}</div></div>`).join("")}</div>`:`<div class="muted small">Changes people make will show here.</div>`}<div class="hint">Only you (the Owner) see this. Nobody can edit or delete entries.</div></div>`:""}
   <div class="card section">
@@ -759,6 +760,48 @@ function viewTrip(){
     <div class="hint">Falls softly behind the app. Only on this phone; pauses when the app is in the background.</div>
   </div>
   ${(m.flights||m.hotels)?`<div class="card section"><h3>Flights & stays</h3><dl class="kv" style="grid-template-columns:auto 1fr">${(m.flights||[]).map(f=>`<dt>${esc(f.when??f[0])}</dt><dd style="text-align:left;font-weight:500">${esc(f.what??f[1])}</dd>`).join("")}${(m.hotels||[]).map(h=>`<dt>${esc(h.when??h[0])}</dt><dd style="text-align:left;font-weight:500"><a href="${esc(mapUrl(h.what??h[1]))}" target="_blank" rel="noopener">${esc(h.what??h[1])}</a></dd>`).join("")}</dl></div>`:""}`;
+}
+/* ---------- shareable invite card ---------- */
+function inviteMessage(link,role){ const trip=(S.meta||{}).name||"our trip";
+  return role==="planner"?`🗺️ Help me plan ${trip}! Hop in as a Planner on Traveel 👉 ${link}`:`🌸 Pack your bags! You're coming on ${trip}. Tap to join us on Traveel 👉 ${link}`; }
+function qrCanvas(text,size){ return new Promise(res=>{ if(!window.QRCode) return res(null); const d=document.createElement("div"); d.style.cssText="position:fixed;left:-9999px;top:0";
+  document.body.appendChild(d); new QRCode(d,{text,width:size,height:size,colorDark:"#1d1d1f",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M});
+  setTimeout(()=>{ const c=d.querySelector("canvas"); res(c); d.remove(); },60); }); }
+function rrect(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+async function inviteImage(link,role){
+  const W=1080,H=1350, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
+  const acc=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#e0475b"; const font='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
+  const bg=g.createLinearGradient(0,0,W,H); bg.addColorStop(0,"#fff7f9"); bg.addColorStop(1,"#fbd9e3"); g.fillStyle=bg; g.fillRect(0,0,W,H);
+  // falling petals
+  const SPR=fxSprites(); let seed=7; const rnd=()=>((seed=(seed*9301+49297)%233280)/233280);
+  for(let i=0;i<26;i++){ const img=i%7===0?SPR.flower:SPR.petals[i%3], sz=i%7===0?70+rnd()*40:34+rnd()*30, x=rnd()*W, y=rnd()*H;
+    if(x>150&&x<930&&y>500&&y<1180) continue; g.save(); g.globalAlpha=.55; g.translate(x,y); g.rotate(rnd()*6.28); g.drawImage(img,-sz/2,-sz/2,sz,sz); g.restore(); }
+  g.textAlign="center"; g.textBaseline="alphabetic";
+  g.fillStyle=acc; g.font=`700 30px ${font}`; g.fillText("T R A V E E L",W/2,118);
+  g.fillStyle="#1d1d1f"; g.font=`800 92px ${font}`; g.fillText("You're invited!",W/2,236);
+  const m=S.meta||{}; g.font=`700 52px ${font}`; g.fillStyle="#1d1d1f"; g.fillText(m.name||"Our trip",W/2,318);
+  if(m.subtitle){ g.font=`500 32px ${font}`; g.fillStyle="#6b6b73"; g.fillText(m.subtitle,W/2,370); }
+  // role pill
+  const label=role==="planner"?"Joining as a Planner":"Joining as a Traveler"; g.font=`700 30px ${font}`; const pw=g.measureText(label).width+64;
+  rrect(g,(W-pw)/2,410,pw,62,31); g.fillStyle=acc; g.fill(); g.fillStyle="#fff"; g.fillText(label,W/2,452);
+  // QR card
+  rrect(g,190,510,700,700,48); g.fillStyle="#fff"; g.shadowColor="rgba(160,60,90,.18)"; g.shadowBlur=40; g.shadowOffsetY=12; g.fill(); g.shadowColor="transparent";
+  const q=await qrCanvas(link,560); if(q){ g.imageSmoothingEnabled=false; g.drawImage(q,260,560,560,560); g.imageSmoothingEnabled=true; }
+  g.fillStyle="#6b6b73"; g.font=`500 28px ${font}`; g.fillText("Scan me, or tap the link in the message",W/2,1170);
+  g.fillStyle="#1d1d1f"; g.font=`600 26px ${font}`; let l=link.replace(/^https?:\/\//,""); while(g.measureText(l).width>940&&l.length>20) l=l.slice(0,-2); if(l!==link.replace(/^https?:\/\//,"")) l+="…";
+  g.fillText(l,W/2,1270);
+  return await new Promise(r=>c.toBlob(r,"image/png"));
+}
+async function shareInvite(link,role,btn){
+  const text=inviteMessage(link,role); const old=btn?btn.textContent:""; if(btn){btn.disabled=true;btn.textContent="Making the card…";}
+  try{
+    const blob=await inviteImage(link,role); const file=blob?new File([blob],"traveel-invite.png",{type:"image/png"}):null;
+    if(file&&navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],text,title:"Join the trip"}); }
+    else if(navigator.share){ await navigator.share({text,title:"Join the trip"}); }
+    else { try{await navigator.clipboard.writeText(text)}catch(e){} if(blob){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="traveel-invite.png"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+      toast("Card downloaded and message copied. Paste it anywhere"); }
+  }catch(e){ if(e&&e.name!=="AbortError") toast("Couldn't share. Use Copy instead"); }
+  if(btn){btn.disabled=false;btn.textContent=old;}
 }
 function drawQR(){
   if(!window.QRCode) return;
@@ -777,6 +820,12 @@ function openSheet(title,body,onMount){
   const f=sh.querySelector("input:not([type=hidden]),textarea,select"); if(f&&!f.readOnly) setTimeout(()=>f.focus({preventScroll:true}),50);
 }
 function closeSheet(){ $("#sheetRoot").innerHTML="" }
+// Keep sheets above the on-screen keyboard (iOS doesn't resize the page; Android does with interactive-widget).
+(function(){ const vv=window.visualViewport; if(!vv) return; const de=document.documentElement;
+  const upd=()=>{ const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop)); de.style.setProperty("--kb",(kb>60?kb:0)+"px"); de.style.setProperty("--vvh",Math.round(vv.height)+"px"); };
+  vv.addEventListener("resize",upd); vv.addEventListener("scroll",upd); upd();
+  document.addEventListener("focusin",e=>{ const el=e.target; if(el&&el.closest&&el.closest(".panel")&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) setTimeout(()=>{ upd(); el.scrollIntoView({block:"center",behavior:"smooth"}); },300); });
+})();
 function twoStep(btn,label,fn){ btn.addEventListener("click",()=>{ if(btn.dataset.armed){fn()} else {btn.dataset.armed="1";btn.textContent=label;setTimeout(()=>{if(btn.isConnected){delete btn.dataset.armed;btn.textContent=btn.dataset.orig}},3000)} }); btn.dataset.orig=btn.textContent }
 
 function itemSheet(dayId,index,preset){
@@ -848,8 +897,10 @@ function walletView(id){
   const mine=w.by&&w.by===S.myId;
   openSheet(w.title,`
     <div id="wBody" class="muted small">Loading…</div>
-    <div class="hint">${w.day?esc(fmtDate(w.day)):"Whole trip"}. Saved in the app, so it opens offline once you've viewed it.</div>
-    ${(S.isOwner||(mine&&S.canWrite))?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="wDel">Delete</button></div>`:""}`,p=>{
+    <div class="hint">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${visAll(w)?"Everyone can see it":esc(visLabel(w))}. Saved in the app, so it opens offline once you've viewed it.</div>
+    ${(S.isOwner||(mine&&S.canWrite))?`${visPicker(w.vis)}<div class="row"><button class="btn small" id="wVis">Save who can see</button><div class="spacer"></div><button class="btn small danger" id="wDel">Delete</button></div>`:""}`,p=>{ visWire(p);
+    const vb=$("#wVis",p); if(vb) vb.onclick=async()=>{ const vis=visRead(p);
+      if(await write(async()=>{ const b=writeBatch(fs); b.update(doc(fs,"wallet/"+id),{vis}); b.update(doc(fs,"files/"+w.assetId),{vis}); await b.commit(); },"Saved",["Changed who can see",w.title+" → "+(vis.includes("all")?"everyone":vis.map(pname).join(", "))])) closeSheet(); };
     fileURL(w.assetId).then(f=>{ const b=$("#wBody",p); if(!b) return;
       if(!f){ b.textContent="This file is missing. Upload it again."; return; }
       b.innerHTML=f.type.startsWith("image")?`<img src="${f.url}" alt="${esc(w.title)}" style="width:100%;border-radius:10px;border:1px solid var(--line);background:#fff">`:`<a class="btn" href="${f.url}" target="_blank" rel="noopener">Open PDF ↗</a>`;
@@ -859,6 +910,18 @@ function walletView(id){
     });
   });
 }
+const visAll = w => !w.vis || !w.vis.length || w.vis.includes("all");
+const visLabel = w => visAll(w)?"":`🔒 ${w.vis.map(pname).join(", ")}`;
+function visPicker(vis){ const all=!vis||!vis.length||vis.includes("all");
+  return `<div class="f"><span class="lab">Who can see it</span><div class="pick" data-vispick>
+    <button type="button" data-vis="all" aria-pressed="${all}">Everyone</button>${S.people.map(p=>`<button type="button" data-vis="${esc(p.id)}" aria-pressed="${!all&&vis.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div>
+    <span class="hint">Pick people to keep it private, e.g. someone's own train QR. The Owner can always see everything.</span></div>`; }
+function visWire(p){ const box=$("[data-vispick]",p); if(!box) return;
+  box.addEventListener("click",ev=>{ const b=ev.target.closest("[data-vis]"); if(!b) return; const all=$('[data-vis="all"]',box);
+    if(b===all){ box.querySelectorAll("[data-vis]").forEach(x=>x.setAttribute("aria-pressed",String(x===all))); return; }
+    b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true")); const any=[...box.querySelectorAll('[data-vis]:not([data-vis="all"])')].some(x=>x.getAttribute("aria-pressed")==="true");
+    all.setAttribute("aria-pressed",String(!any)); }); }
+function visRead(p){ const sel=[...$("[data-vispick]",p).querySelectorAll('[data-vis][aria-pressed="true"]')].map(x=>x.dataset.vis); return (!sel.length||sel.includes("all"))?["all"]:sel; }
 async function compressFile(f){
   const toURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
   if(f.type==="application/pdf"){ if(f.size>700*1024) throw {code:"pdf_big"}; return {data:await toURL(f),type:f.type}; }
@@ -873,14 +936,15 @@ function walletAdd(){
     <div class="f"><label for="wFile">Screenshot or PDF</label><input id="wFile" type="file" accept="image/*,application/pdf"><span class="hint">Images are shrunk to save space. PDFs up to 700 KB (screenshot bigger ones).</span></div>
     <div class="f"><label for="wTitle">Name</label><input id="wTitle" placeholder="e.g. Nozomi Tokyo → Kyoto"></div>
     <div class="f"><label for="wDay">Day</label><select id="wDay"><option value="">Whole trip</option>${S.days.map(x=>`<option value="${esc(x.date)}">${esc(fmtDate(x.date))} · ${esc(x.city)}</option>`).join("")}</select></div>
-    <button class="btn primary" id="wSave">Upload</button>`,p=>{
+    ${visPicker(["all"])}
+    <button class="btn primary" id="wSave">Upload</button>`,p=>{ visWire(p);
     $("#wSave",p).onclick=async()=>{
       const f=$("#wFile",p).files[0]; if(!f){toast("Pick a file first");return}
       const title=$("#wTitle",p).value.trim()||f.name; const btn=$("#wSave",p); btn.disabled=true; btn.textContent="Uploading…";
       try{
-        const c=await compressFile(f);
-        const ref=await S.db.collection("files").add({data:c.data,type:c.type,by:S.myId,at:Date.now()});
-        if(await write(()=>S.db.collection("wallet").add({title,day:$("#wDay",p).value,assetId:ref.id,kind:c.type,at:Date.now(),by:S.myId||null}),"Uploaded",["Uploaded ticket",title])) closeSheet();
+        const c=await compressFile(f); const vis=visRead(p);
+        const ref=await S.db.collection("files").add({data:c.data,type:c.type,by:S.myId,at:Date.now(),vis});
+        if(await write(()=>S.db.collection("wallet").add({title,day:$("#wDay",p).value,assetId:ref.id,kind:c.type,at:Date.now(),by:S.myId||null,vis}),"Uploaded",["Uploaded ticket",title+(vis.includes("all")?"":" (private)")])) closeSheet();
         else { btn.disabled=false; btn.textContent="Upload"; }
       }catch(e){ toast(e&&e.code==="pdf_big"?"That PDF is over 700 KB. Screenshot it instead.":e&&e.code==="img_big"?"That image is too big, try a smaller screenshot.":"Upload failed. Check your connection."); btn.disabled=false; btn.textContent="Upload"; }
     };
@@ -1139,6 +1203,7 @@ document.addEventListener("click",async ev=>{
     case "importData": importData(); break;
     case "joinTrip": joinTrip(); break;
     case "newInvite": newInvite(a.dataset.role); break;
+    case "shareInvite": shareInvite(a.dataset.link,a.dataset.role,a); break;
     case "copyInvite": { const v=a.dataset.link; try{await navigator.clipboard.writeText(v);toast("Invite link copied")}catch(e){toast("Copy the link from the box")} break; }
     case "resetInvite": { const r=a.dataset.role; const old=S.invites.filter(x=>x.role===r);
       if(a.dataset.armed!=="1"){ a.dataset.armed="1"; a.textContent="Tap again to reset"; setTimeout(()=>{ if(a.isConnected){a.dataset.armed="";a.textContent="Reset link"} },3000); break; }
@@ -1186,7 +1251,11 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
     sub("days","order",v=>S.days=v); sub("notes","order",v=>S.notes=v); sub("tasks","order",v=>S.tasks=v);
     sub("people","order",v=>S.people=v); sub("expenses",null,v=>S.expenses=v);
     sub("rates",null,v=>{S.rates={}; v.forEach(r=>S.rates[r.id]=r)}); sub("meta",null,v=>{S.meta=v.find(x=>x.id==="trip")||{}});
-    sub("wallet","at",v=>S.wallet=v); sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v); sub("claims",null,v=>{S.claims=v; if(S.isOwner) backfillClaims();});
+    if(S.isOwner) sub("wallet","at",v=>{ S.wallet=v; const old=v.filter(w=>!w.vis); if(old.length){ const b=writeBatch(fs); old.forEach(w=>b.update(doc(fs,"wallet/"+w.id),{vis:["all"]})); b.commit().catch(()=>{}); } });
+    else { const parts={}; const merge=()=>{ const m=new Map(); Object.values(parts).forEach(a=>a.forEach(w=>m.set(w.id,w))); S.wallet=[...m.values()].sort((a,b)=>(a.at||0)-(b.at||0)); render(); };
+      const wq=(key,cons)=>unsubs.push(onSnapshot(query(collection(fs,"wallet"),...cons),sn=>{ parts[key]=sn.docs.map(d=>({id:d.id,...d.data()})); merge(); },e=>console.warn("wallet",key,e)));
+      wq("all",[where("vis","array-contains","all")]); wq("by",[where("by","==",S.myId)]);
+      if((S.member||{}).personId) wq("me",[where("vis","array-contains",S.member.personId)]); } sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v); sub("claims",null,v=>{S.claims=v; if(S.isOwner) backfillClaims();});
     if(S.isOwner) unsubs.push(S.db.collection("audit").orderBy("at","desc").limit(60).onSnapshot(snap=>{ S.audit=snap.docs.map(d=>({id:d.id,...d.data()})); render(); },()=>{}));
     if(S.isOwner) sub("invites","at",v=>S.invites=v,"desc");
     setTimeout(()=>{S.ready=true; render();},400);
@@ -1199,10 +1268,10 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
     if(S.invite){ getDoc(doc(fs,"invites/"+S.invite)).then(sn=>{ S.inviteRole=sn.exists()?sn.data().role:null; render(); }).catch(()=>{ S.inviteRole=null; render(); }); }
     unsubs.push(onSnapshot(doc(fs,"config/owner"),sn=>{ S.ownerUid=sn.exists()?sn.data().uid:null; render(); },()=>{ S.ownerUid=null; render(); }));
     unsubs.push(onSnapshot(doc(fs,"members/"+u.uid),sn=>{
-      const prevRole=(S.member||{}).role;
+      const prevRole=(S.member||{}).role, prevPid=(S.member||{}).personId;
       S.member=sn.exists()?{id:sn.id,...sn.data()}:null;
       S.isOwner=!!S.member&&S.member.role==="admin"; S.canWrite=!!S.member&&S.member.role!=="traveler"; S.assets=S.canWrite?{}:null;
-      if(S.member&&(!dataStarted||prevRole!==S.member.role)){ if(dataStarted){ stopAll(); location.reload(); return; } startData(); }
+      if(S.member&&(!dataStarted||prevRole!==S.member.role||(S.member.role!=="admin"&&(prevPid||null)!==(S.member.personId||null)))){ if(dataStarted){ stopAll(); location.reload(); return; } startData(); }
       setRole(); render();
     },()=>{ S.member=null; render(); }));
   });
