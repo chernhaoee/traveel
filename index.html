@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Traveel</title>
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#202124" media="(prefers-color-scheme: dark)">
@@ -152,8 +152,8 @@ details.note .ed{padding:0 14px 12px}
 input[type=color]{width:44px;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:2px;cursor:pointer}
 ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
 /* sheet */
-.sheet{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:color-mix(in srgb,#000 45%,transparent)}
-.panel{background:var(--bg);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;border-top:2px solid var(--accent);padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
+.sheet{position:fixed;inset:0;bottom:var(--kb,0px);z-index:50;transition:bottom .15s ease;display:flex;align-items:flex-end;justify-content:center;background:color-mix(in srgb,#000 45%,transparent)}
+.panel{background:var(--bg);width:100%;max-width:640px;max-height:min(90%,calc(var(--vvh,100dvh) - 24px));overflow:auto;border-radius:18px 18px 0 0;border-top:2px solid var(--accent);padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px}
 .panel .ph{display:flex;align-items:center;gap:10px}
 .panel .ph h2{font-size:18px;flex:1}
 .x{border:0;background:var(--fill);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1}
@@ -820,6 +820,12 @@ function openSheet(title,body,onMount){
   const f=sh.querySelector("input:not([type=hidden]),textarea,select"); if(f&&!f.readOnly) setTimeout(()=>f.focus({preventScroll:true}),50);
 }
 function closeSheet(){ $("#sheetRoot").innerHTML="" }
+// Keep sheets above the on-screen keyboard (iOS doesn't resize the page; Android does with interactive-widget).
+(function(){ const vv=window.visualViewport; if(!vv) return; const de=document.documentElement;
+  const upd=()=>{ const kb=Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop)); de.style.setProperty("--kb",(kb>60?kb:0)+"px"); de.style.setProperty("--vvh",Math.round(vv.height)+"px"); };
+  vv.addEventListener("resize",upd); vv.addEventListener("scroll",upd); upd();
+  document.addEventListener("focusin",e=>{ const el=e.target; if(el&&el.closest&&el.closest(".panel")&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) setTimeout(()=>{ upd(); el.scrollIntoView({block:"center",behavior:"smooth"}); },300); });
+})();
 function twoStep(btn,label,fn){ btn.addEventListener("click",()=>{ if(btn.dataset.armed){fn()} else {btn.dataset.armed="1";btn.textContent=label;setTimeout(()=>{if(btn.isConnected){delete btn.dataset.armed;btn.textContent=btn.dataset.orig}},3000)} }); btn.dataset.orig=btn.textContent }
 
 function itemSheet(dayId,index,preset){
