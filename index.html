@@ -667,7 +667,9 @@ function todoSwitch(){ return `<div class="seg" role="group" aria-label="List"><
 const shopTags = x => Array.isArray(x.for)?x.for.filter(Boolean):(x.for?[x.for]:[]);
 const shopFor = x => { const t=shopTags(x); return t.length?t.map(pname).join(", "):"Whole group"; };
 function viewShop(){
-  const me=myPerson(); const F=S.shopFilter||[];
+  const me=myPerson();
+  const opts=[...new Set(S.shopping.flatMap(x=>{ const t=shopTags(x); return t.length?t:["_all"]; }))]; // only names that have items
+  const F=(S.shopFilter||[]).filter(v=>opts.includes(v));
   let items=S.shopping.filter(x=>!S.hideDone||!x.done);
   if(F.length) items=items.filter(x=>{ const t=shopTags(x); return t.length?t.some(id=>F.includes(id)):F.includes("_all"); });
   const groups=[]; items.forEach(x=>{const g=x.where||"Anywhere"; if(!groups.includes(g)) groups.push(g)});
@@ -675,7 +677,7 @@ function viewShop(){
   return `${todoSwitch()}
   <div class="row"><div><div class="eyebrow">Still to buy</div><div class="big num">${left}</div></div><div class="spacer"></div>
     <button class="btn small plain" data-act="hideDone" aria-pressed="${S.hideDone}">${S.hideDone?"Show bought":"Hide bought"}</button>${W()?`<button class="btn small" data-act="addShop">+ Add</button>`:""}</div>
-  ${S.people.length?`<div class="pick" role="group" aria-label="Show items for"><button data-shopf="" aria-pressed="${!F.length}">Show all</button><button data-shopf="_all" aria-pressed="${F.includes("_all")}">Whole group</button>${S.people.map(p=>`<button data-shopf="${esc(p.id)}" aria-pressed="${F.includes(p.id)}">${esc(p.name)}${me&&me.id===p.id?" (me)":""}</button>`).join("")}</div>
+  ${opts.length>1?`<div class="pick" role="group" aria-label="Show items for"><button data-shopf="" aria-pressed="${!F.length}">Show all</button>${opts.includes("_all")?`<button data-shopf="_all" aria-pressed="${F.includes("_all")}">Whole group</button>`:""}${S.people.filter(p=>opts.includes(p.id)).map(p=>`<button data-shopf="${esc(p.id)}" aria-pressed="${F.includes(p.id)}">${esc(p.name)}${me&&me.id===p.id?" (me)":""}</button>`).join("")}</div>
   ${F.length?`<div class="hint">Showing items for ${F.map(id=>id==="_all"?"the whole group":pname(id)).join(" + ")}. Tap more to combine, or Show all to clear.</div>`:""}`:""}
   ${items.length?groups.map(g=>{const xs=items.filter(x=>(x.where||"Anywhere")===g);
     return `<div class="section"><div class="grouphead"><h3>${esc(g)}</h3><span class="small muted num">${xs.filter(x=>x.done).length}/${xs.length}</span></div>
