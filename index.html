@@ -601,7 +601,7 @@ function viewTrip(){
     <div class="swatches">${PRESETS.map(c=>`<button class="sw" style="background:${c}" data-accent="${c}" aria-label="Accent ${c}" aria-pressed="${acc.toLowerCase()===c}"></button>`).join("")}<input type="color" id="accentPick" value="${esc(acc)}" aria-label="Pick any colour"></div>
     <div class="hint">Only on this phone. Lines, borders and buttons use it.</div>
   </div>
-  ${(m.flights||m.hotels)?`<div class="card section"><h3>Flights & stays</h3><dl class="kv" style="grid-template-columns:auto 1fr">${(m.flights||[]).map(f=>`<dt>${esc(f[0])}</dt><dd style="text-align:left;font-weight:500">${esc(f[1])}</dd>`).join("")}${(m.hotels||[]).map(h=>`<dt>${esc(h[0])}</dt><dd style="text-align:left;font-weight:500"><a href="${esc(mapUrl(h[1]))}" target="_blank" rel="noopener">${esc(h[1])}</a></dd>`).join("")}</dl></div>`:""}`;
+  ${(m.flights||m.hotels)?`<div class="card section"><h3>Flights & stays</h3><dl class="kv" style="grid-template-columns:auto 1fr">${(m.flights||[]).map(f=>`<dt>${esc(f.when??f[0])}</dt><dd style="text-align:left;font-weight:500">${esc(f.what??f[1])}</dd>`).join("")}${(m.hotels||[]).map(h=>`<dt>${esc(h.when??h[0])}</dt><dd style="text-align:left;font-weight:500"><a href="${esc(mapUrl(h.what??h[1]))}" target="_blank" rel="noopener">${esc(h.what??h[1])}</a></dd>`).join("")}</dl></div>`:""}`;
 }
 function drawQR(){
   if(!window.QRCode) return;
