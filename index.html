@@ -221,7 +221,7 @@ function mkDb(){
 const CATS = ["Food","Transport","Shopping","Tickets","Stay","Other"];
 const PRESETS = ["#e0475b","#e8833a","#2f9e6b","#2b7bd6","#7a5af0","#5f6b7a"];
 const S = {db:null,user:null,sample:null,canWrite:true,ready:false,
-  days:[],notes:[],tasks:[],people:[],expenses:[],rates:{},meta:{},wallet:[],audit:[],members:[],invites:[],fileCache:{},liveRate:null,authChecked:false,authUser:null,ownerUid:undefined,member:undefined,invite:null,inviteRole:undefined,importing:false,shopping:[],todoView:"todo",shopMine:false,names:{},assets:null,cv:"",
+  days:[],notes:[],tasks:[],people:[],expenses:[],rates:{},meta:{},wallet:[],audit:[],members:[],claims:[],invites:[],fileCache:{},liveRate:null,authChecked:false,authUser:null,ownerUid:undefined,member:undefined,invite:null,inviteRole:undefined,importing:false,shopping:[],todoView:"todo",shopMine:false,names:{},assets:null,cv:"",
   tab:"plan",dayId:null,notesGroup:"Heads-up",hideDone:false,rateDate:null};
 
 /* ---------- helpers ---------- */
@@ -324,8 +324,21 @@ function render(){
 }
 const W = () => S.canWrite!==false && !!S.db;
 
-const myPerson = () => { const pid=(S.member||{}).personId||ls.get("mePid",""); return pid?(S.people.find(p=>p.id===pid)||null):null; };
-const ROLE_LABEL={admin:"Admin",planner:"Planner",traveler:"Traveler"};
+const myPerson = () => { const pid=(S.member||{}).personId; return pid?(S.people.find(p=>p.id===pid)||null):null; };
+const holderOf = pid => { const c=S.claims.find(x=>x.id===pid); const uid=c?c.uid:((S.members.find(m=>m.personId===pid)||{}).id); return uid?(S.members.find(m=>m.id===uid)||{id:uid}):null; };
+const claimedBy = pid => { const h=holderOf(pid); return h&&h.id!==S.myId?h:null; };
+let backfilling=false;
+async function backfillClaims(){ // links made before claims existed get a claim record (Owner only)
+  if(backfilling) return; const miss=S.members.filter(m=>m.personId&&!S.claims.some(c=>c.id===m.personId)); if(!miss.length) return;
+  backfilling=true; try{ const b=writeBatch(fs); miss.forEach(m=>b.set(doc(fs,"claims/"+m.personId),{uid:m.id})); await b.commit(); }catch(e){ console.warn("claims",e); } backfilling=false;
+}
+function whoPicker(){
+  const cur=(myPerson()||{}).id;
+  return `<div class="list">${S.people.map(p=>{const c=claimedBy(p.id);
+    return `<button class="li tap" data-act="pickMe" data-pid="${esc(p.id)}" ${c?"disabled":""} style="${c?"opacity:.5":""}"><div class="main"><div class="ti">${esc(p.name)} ${cur===p.id?`<span class="tag">You</span>`:""}</div>${c?`<div class="sub">Already picked by ${esc(c.name||c.email||"someone")}</div>`:""}</div></button>`}).join("")}</div>
+  <div class="f"><label for="meNew">Not on the list?</label><div class="row"><input id="meNew" placeholder="Your name" style="flex:1"><button class="btn small" data-act="addMe">Add me</button></div></div>`;
+}
+const ROLE_LABEL={admin:"Owner",planner:"Planner",traveler:"Traveler"};
 const role = () => !S.db?"Not signed in":(ROLE_LABEL[(S.member||{}).role]||"Traveler");
 function transportFor(d){
   const [y,m,dd]=d.date.split("-").map(Number);
@@ -347,7 +360,7 @@ function viewGate(){
     <button class="btn primary" data-act="signIn" style="min-width:220px">Sign in with Google</button>
     <div class="hint">Only people with an invite link can see the trip.</div></div>`;
   if(S.ownerUid===undefined) return `<div class="empty">Loading…</div>`;
-  if(S.ownerUid===null) return `<div class="card section"><h2>Set up the trip</h2><div class="small">No one owns this trip yet. Make yourself the Admin, then load the trip data.</div><button class="btn primary" data-act="setupOwner">Make me the Admin</button></div>`;
+  if(S.ownerUid===null) return `<div class="card section"><h2>Set up the trip</h2><div class="small">No one owns this trip yet. Make yourself the Owner, then load the trip data.</div><button class="btn primary" data-act="setupOwner">Make me the Owner</button></div>`;
   if(S.member===undefined) return `<div class="empty">Loading…</div>`;
   if(!S.member){
     if(S.invite&&S.inviteRole) return `<div class="card section"><h2>Join the trip</h2><div class="small">You're joining as <strong>${esc(ROLE_LABEL[S.inviteRole]||S.inviteRole)}</strong>, signed in as ${esc(S.authUser.email||"")}.</div><button class="btn primary" data-act="joinTrip">Join</button><button class="btn small plain" data-act="signOut">Use another Google account</button></div>`;
@@ -355,7 +368,8 @@ function viewGate(){
     if(S.invite) return `<div class="empty">Checking your invite…</div>`;
     return `<div class="card section"><h2>No access yet</h2><div class="small">You're signed in as ${esc(S.authUser.email||"")}, but you haven't joined this trip. Ask Chern Hao for an invite link.</div><button class="btn small plain" data-act="signOut">Sign out</button></div>`;
   }
-  if(S.isOwner&&S.ready&&!S.days.length&&!S.importing) return `<div class="card section"><h2>Load the trip</h2><div class="small">You're the Admin. Pick the trip-data file (traveel-trip-data.json) to load the itinerary, notes, to-dos and shopping list.</div><button class="btn primary" data-act="importData">Choose trip data file</button></div>`;
+  if(S.ready&&S.days.length&&!myPerson()&&!ls.get("whoSkip:"+S.myId,"")) return `<div class="card section"><h2>Which one is you?</h2><div class="small">Pick your name so the app can show your own budget, your share of spending and any days shared with you. If you pick the wrong one, the Owner can change it.</div>${whoPicker()}<button class="btn small plain" data-act="skipWho">Skip for now</button></div>`;
+  if(S.isOwner&&S.ready&&!S.days.length&&!S.importing) return `<div class="card section"><h2>Load the trip</h2><div class="small">You're the Owner. Pick the trip-data file (traveel-trip-data.json) to load the itinerary, notes, to-dos and shopping list.</div><button class="btn primary" data-act="importData">Choose trip data file</button></div>`;
   return "";
 }
 async function doSignIn(){
@@ -365,7 +379,7 @@ async function doSignIn(){
 }
 function profileFields(){ const u=S.authUser; return {name:u.displayName||"",email:u.email||"",at:Date.now()}; }
 async function setupOwner(){
-  try{ await setDoc(doc(fs,"config/owner"),{uid:S.myId,at:Date.now()}); await setDoc(doc(fs,"members/"+S.myId),{...profileFields(),role:"admin"}); toast("You're the Admin"); }
+  try{ await setDoc(doc(fs,"config/owner"),{uid:S.myId,at:Date.now()}); await setDoc(doc(fs,"members/"+S.myId),{...profileFields(),role:"admin"}); toast("You're the Owner"); }
   catch(e){ toast("Couldn't set up: "+(e.code||"try again")); }
 }
 async function joinTrip(){
@@ -397,18 +411,32 @@ function memberSheet(uid){
   const m=S.members.find(x=>x.id===uid); if(!m) return;
   openSheet(m.name||m.email||"Member",`
     <div class="small muted">${esc(m.email||"")}</div>
-    <div class="f"><span class="lab">Role</span><div class="pick" id="mRole">${["admin","planner","traveler"].map(r=>`<button type="button" data-v="${r}" aria-pressed="${m.role===r}">${ROLE_LABEL[r]}</button>`).join("")}</div></div>
-    <button class="btn primary" id="mSave">Save role</button>
-    <div class="row"><div class="spacer"></div><button class="btn small danger" id="mDel">Remove from trip</button></div>
-    <div class="hint">Removing someone takes away their access straight away. They'd need a new invite to come back.</div>`,p=>{
-    $("#mRole",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;$("#mRole",p).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")});
-    $("#mSave",p).onclick=async()=>{ const r=$("#mRole",p).querySelector('[aria-pressed="true"]').dataset.v; if(await write(()=>S.db.doc("members/"+uid).update({role:r}),"Role updated",["Changed role",(m.name||m.email)+" → "+ROLE_LABEL[r]])) closeSheet(); };
-    twoStep($("#mDel",p),"Tap again to remove",async()=>{ if(await write(()=>S.db.doc("members/"+uid).delete(),"Removed",["Removed member",m.name||m.email])) closeSheet(); });
+    ${uid===S.myId?"":`<div class="f"><span class="lab">Role</span><div class="pick" id="mRole">${["admin","planner","traveler"].map(r=>`<button type="button" data-v="${r}" aria-pressed="${m.role===r}">${ROLE_LABEL[r]}</button>`).join("")}</div></div>`}
+    <div class="f"><label for="mPid">In the trip as</label><select id="mPid"><option value="">Not picked</option>${S.people.map(pp=>{const c=S.members.find(x=>x.personId===pp.id&&x.id!==uid);return `<option value="${esc(pp.id)}" ${m.personId===pp.id?"selected":""}>${esc(pp.name)}${c?` (now ${esc(c.name||c.email||"someone")}, will swap)`:""}</option>`}).join("")}</select></div>
+    <div class="hint">Picking a name someone else has swaps the two names.</div>
+    <button class="btn primary" id="mSave">Save</button>
+    ${uid===S.myId?"":`<div class="row"><div class="spacer"></div><button class="btn small danger" id="mDel">Remove from trip</button></div>`}
+    ${uid===S.myId?"":`<div class="hint">Removing someone takes away their access straight away. They'd need a new invite to come back.</div>`}`,p=>{
+    if($("#mRole",p)) $("#mRole",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;$("#mRole",p).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")});
+    $("#mSave",p).onclick=async()=>{ const r=$("#mRole",p)?$("#mRole",p).querySelector('[aria-pressed="true"]').dataset.v:m.role; const pid=$("#mPid",p).value||null, old=m.personId||null;
+      const other=pid?S.members.find(x=>x.personId===pid&&x.id!==uid):null;
+      const log=[]; if(r!==m.role) log.push("role → "+ROLE_LABEL[r]); if(pid!==old) log.push(other?`swapped with ${other.name||other.email} (${pname(pid)} ⇄ ${old?pname(old):"no name"})`:"is "+(pid?pname(pid):"nobody"));
+      if(!log.length){closeSheet();return}
+      const ok=await write(async()=>{ const b=writeBatch(fs);
+        b.update(doc(fs,"members/"+uid),{role:r,personId:pid});
+        if(pid!==old){
+          if(other) b.update(doc(fs,"members/"+other.id),{personId:old});
+          if(pid) b.set(doc(fs,"claims/"+pid),{uid});
+          if(old){ if(other) b.set(doc(fs,"claims/"+old),{uid:other.id}); else b.delete(doc(fs,"claims/"+old)); }
+        }
+        await b.commit(); },"Saved",["Updated member",(m.name||m.email)+": "+log.join(", ")]);
+      if(ok) closeSheet(); };
+    if($("#mDel",p)) twoStep($("#mDel",p),"Tap again to remove",async()=>{ if(await write(()=>S.db.doc("members/"+uid).delete(),"Removed",["Removed member",m.name||m.email])) closeSheet(); });
   });
 }
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
-  if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Admin loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
+  if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
   if(!V.find(d=>d.id===S.dayId)){ const t=todayJST(); S.dayId=(V.find(d=>d.date===t)||V[0]).id; }
   const d=V.find(x=>x.id===S.dayId), idx=S.days.indexOf(d);
   const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}</button>`).join("");
@@ -483,7 +511,7 @@ function viewSpend(){
         <dt>I paid for the group</dt><dd>${yen(B.paid)}</dd>
       </dl>
       <div class="hint">Your share of every expense you're split into. Only you see this, saved on this phone.</div>`
-    :`<div class="muted small">Tap <strong>This is me</strong> on your name in the Trip tab to see your own budget.</div>`}
+    :`<div class="muted small">Pick your name in the Trip tab (<strong>You → Pick</strong>) to see your own budget.</div>`}
   </div>
   <div class="card section">
     <h3>Quick convert</h3>
@@ -564,6 +592,8 @@ function viewTrip(){
   <div class="card section">
     <div class="row"><h3>You</h3><div class="spacer"></div><span class="chip ${role()==="Traveler"?"soft":""}">${esc(role())}</span></div>
     <div class="small">${esc((S.member||{}).name||"")} <span class="muted">${esc((S.member||{}).email||"")}</span></div>
+    <div class="row"><div class="small">In the trip as <strong>${esc((myPerson()||{}).name||"not picked yet")}</strong></div><div class="spacer"></div>${S.isOwner?`<button class="btn small plain" data-act="memberRole" data-uid="${esc(S.myId)}">Change</button>`:(myPerson()?"":`<button class="btn small plain" data-act="changeWho">Pick</button>`)}</div>
+    ${!S.isOwner&&myPerson()?`<div class="hint">Wrong name? Ask the Owner to change it.</div>`:""}
     <div class="row"><button class="btn small plain" data-act="signOut">Sign out</button></div>
   </div>
   ${S.isOwner?`<div class="card section">
@@ -577,23 +607,23 @@ function viewTrip(){
   </div>`:""}
   <div class="card section">
     <h3>Members & roles</h3>
-    <div class="list">${S.members.map(m=>`<div class="li"><div class="main"><div class="ti">${esc(m.name||m.email||"Someone")} ${m.id===S.myId?`<span class="tag">You</span>`:""}</div><div class="sub">${esc(m.email||"")}</div></div><span class="chip ${m.role==="traveler"?"soft":""}">${esc(ROLE_LABEL[m.role]||m.role)}</span>${(S.isOwner&&m.id!==S.myId)?`<button class="btn small plain" data-act="memberRole" data-uid="${esc(m.id)}">Change</button>`:""}</div>`).join("")}</div>
+    <div class="list">${S.members.map(m=>`<div class="li"><div class="main"><div class="ti">${esc(m.name||m.email||"Someone")} ${m.id===S.myId?`<span class="tag">You</span>`:""}</div><div class="sub">${esc(m.email||"")}${m.personId?` · as ${esc(pname(m.personId))}`:" · name not picked"}</div></div><span class="chip ${m.role==="traveler"?"soft":""}">${esc(ROLE_LABEL[m.role]||m.role)}</span>${S.isOwner?`<button class="btn small plain" data-act="memberRole" data-uid="${esc(m.id)}">Change</button>`:""}</div>`).join("")}</div>
     <dl class="kv small" style="grid-template-columns:auto 1fr">
-      <dt>Admin</dt><dd style="text-align:left;font-weight:500">Everything, plus invites, roles, removing people, who can see which day</dd>
+      <dt>Owner</dt><dd style="text-align:left;font-weight:500">Everything, plus invites, roles, removing people, who can see which day</dd>
       <dt>Planner</dt><dd style="text-align:left;font-weight:500">Edits the plan, lists, notes and spending, uploads tickets, sees the activity log</dd>
       <dt>Traveler</dt><dd style="text-align:left;font-weight:500">View only</dd>
     </dl>
   </div>
   <div class="card section">
     <div class="row"><h3>People (for splitting)</h3><div class="spacer"></div>${W()?`<button class="btn small plain" data-act="addPerson">+ Add</button>`:""}</div>
-    ${S.people.length?`<div class="list">${S.people.map(p=>`<div class="li"><div class="main"><div class="ti">${esc(p.name)} ${(myPerson()||{}).id===p.id?`<span class="tag">You</span>`:""}</div>${(()=>{const m=S.members.find(m=>m.personId===p.id&&m.id!==S.myId);return m?`<div class="sub">${esc(m.name||m.email||"Linked")}</div>`:""})()}</div>${(!myPerson()&&!S.members.some(m=>m.personId===p.id))?`<button class="btn small" data-act="thisIsMe" data-pid="${esc(p.id)}">This is me</button>`:""}${W()?`<button class="btn small plain" data-person="${esc(p.id)}">Rename</button>`:""}</div>`).join("")}</div>${!myPerson()?`<div class="hint">Tap <strong>This is me</strong> on your name. It unlocks your own budget and any days shared only with you.</div>`:""}`:`<div class="muted small">No one added yet.</div>`}
+    ${S.people.length?`<div class="list">${S.people.map(p=>`<div class="li"><div class="main"><div class="ti">${esc(p.name)} ${(myPerson()||{}).id===p.id?`<span class="tag">You</span>`:""}</div>${(()=>{const m=S.members.find(m=>m.personId===p.id&&m.id!==S.myId);return m?`<div class="sub">${esc(m.name||m.email||"Linked")}</div>`:""})()}</div>${W()?`<button class="btn small plain" data-person="${esc(p.id)}">Rename</button>`:""}</div>`).join("")}</div>`:`<div class="muted small">No one added yet.</div>`}
   </div>
   ${(S.meta.addresses||[]).length?`<div class="card section"><h3>Address cards</h3><div class="hint">Big Japanese address to show a taxi driver or the luggage counter.</div><div class="row">${S.meta.addresses.map(a=>`<button class="btn small plain" data-addr="${esc(a.id)}">🚕 ${esc(a.label)}</button>`).join("")}</div></div>`:""}
   <div class="card section">
     <div class="row"><h3>Tickets & bookings</h3><div class="spacer"></div>${S.canWrite?`<button class="btn small" data-act="addWallet">+ Upload</button>`:""}</div>
     ${S.wallet.length?`<div class="list">${S.wallet.map(w=>`<button class="li tap" data-wallet="${esc(w.id)}"><div class="main"><div class="ti">🎫 ${esc(w.title)}</div><div class="sub">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${isImg(w)?"Image":"PDF"}</div></div></button>`).join("")}</div>`:`<div class="muted small">${S.canWrite?"Upload screenshots of shinkansen QR codes, bus tickets, hotel confirmations, Disney tickets. They also show on the right day in the Plan.":"Nothing uploaded yet."}</div>`}
   </div>
-  ${W()?`<div class="card section"><h3>Activity</h3>${S.audit.length?`<div class="list">${S.audit.slice(0,40).map(x=>`<div class="li"><div class="main"><div class="ti" style="font-weight:500"><strong>${esc(x.who||((S.members.find(m=>m.id===x.uid)||{}).name)||"Someone")}</strong> ${esc((x.a||"").toLowerCase())}</div><div class="sub">${esc(x.t||"")}</div></div><div class="small muted" style="white-space:nowrap">${esc(ago(x.at))}</div></div>`).join("")}</div>`:`<div class="muted small">Changes people make will show here.</div>`}<div class="hint">Only Admin and Planners see this. Nobody can edit or delete entries.</div></div>`:""}
+  ${W()?`<div class="card section"><h3>Activity</h3>${S.audit.length?`<div class="list">${S.audit.slice(0,40).map(x=>`<div class="li"><div class="main"><div class="ti" style="font-weight:500"><strong>${esc(x.who||((S.members.find(m=>m.id===x.uid)||{}).name)||"Someone")}</strong> ${esc((x.a||"").toLowerCase())}</div><div class="sub">${esc(x.t||"")}</div></div><div class="small muted" style="white-space:nowrap">${esc(ago(x.at))}</div></div>`).join("")}</div>`:`<div class="muted small">Changes people make will show here.</div>`}<div class="hint">Only the Owner and Planners see this. Nobody can edit or delete entries.</div></div>`:""}
   <div class="card section">
     <h3>Appearance</h3>
     <div class="seg" role="group" aria-label="Theme">${["system","light","dark"].map(t=>`<button data-theme-set="${t}" aria-pressed="${theme===t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
@@ -764,7 +794,7 @@ function dayVisSheet(){
   openSheet("Who can see "+fmtDate(d.date),`
     <div class="hint">Pick who sees this day in the app. Pick nobody to show it to everyone. You (the owner) always see every day.</div>
     <div class="pick" id="vPick">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${cur.has(p.id)}">${esc(p.name)}${p.uid?"":" (not linked)"}</button>`).join("")}</div>
-    <div class="hint">Each person has to tap <strong>This is me</strong> in the Trip tab once, so the app knows who they are. People who haven't won't see restricted days.<br>This hides the day in the app screens. It's a privacy screen, not a lock: anyone invited could still get at the data with technical tools.</div>
+    <div class="hint">Each person picks their name once (asked right after they join), so the app knows who they are. People who haven't won't see restricted days.<br>This hides the day in the app screens. It's a privacy screen, not a lock: anyone invited could still get at the data with technical tools.</div>
     <button class="btn primary" id="vSave">Save</button>`,p=>{
     $("#vPick",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true"))});
     $("#vSave",p).onclick=async()=>{
@@ -935,8 +965,20 @@ document.addEventListener("click",async ev=>{
     case "shopAll": S.shopMine=false; ls.set("shopMine",""); render(); break;
     case "addWallet": if(S.canWrite) walletAdd(); break;
     case "editBudget": budgetSheet(); break;
-    case "thisIsMe": { const pid=a.dataset.pid; ls.set("mePid",pid);
-      write(()=>S.db.doc("members/"+S.myId).update({personId:pid}),"Linked to you",S.canWrite?["Linked account",pname(pid)]:null); break; }
+    case "pickMe": { const pid=a.dataset.pid; if(claimedBy(pid)){toast("Someone else already picked that name");break}
+      if(myPerson()&&!S.isOwner){toast("Ask the Owner to change your name");break}
+      try{ const b=writeBatch(fs); b.set(doc(fs,"claims/"+pid),{uid:S.myId}); b.update(doc(fs,"members/"+S.myId),{personId:pid}); await b.commit();
+        toast("You're "+pname(pid)); closeSheet();
+        try{ S.db.collection("audit").add({at:Date.now(),uid:S.myId,who:pname(pid),a:"Picked their name",t:pname(pid)}).catch(()=>{}); }catch(e){}
+      }catch(e){ toast("That name was just taken. Pick another, or ask the Owner."); }
+      break; }
+    case "addMe": { const inp=a.closest(".f").querySelector("#meNew"); const name=(inp.value||"").trim(); if(!name){toast("Type your name");break}
+      if(S.people.some(p=>p.name.trim().toLowerCase()===name.toLowerCase())){toast("That name's already on the list — pick it instead");break}
+      const ref=doc(collection(fs,"people"));
+      const ok=await write(async()=>{ const b=writeBatch(fs); b.set(ref,{name,order:Math.max(0,...S.people.map(x=>x.order||0))+1,by:S.myId}); b.set(doc(fs,"claims/"+ref.id),{uid:S.myId}); b.update(doc(fs,"members/"+S.myId),{personId:ref.id}); await b.commit(); },"Added you as "+name,S.canWrite?["Added themselves",name]:null);
+      if(ok) closeSheet(); break; }
+    case "skipWho": ls.set("whoSkip:"+S.myId,"1"); render(); break;
+    case "changeWho": openSheet("Which one is you?",whoPicker()); break;
     case "signIn": doSignIn(); break;
     case "signOut": signOut(auth).then(()=>location.reload()); break;
     case "setupOwner": setupOwner(); break;
@@ -986,7 +1028,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
     sub("days","order",v=>S.days=v); sub("notes","order",v=>S.notes=v); sub("tasks","order",v=>S.tasks=v);
     sub("people","order",v=>S.people=v); sub("expenses",null,v=>S.expenses=v);
     sub("rates",null,v=>{S.rates={}; v.forEach(r=>S.rates[r.id]=r)}); sub("meta",null,v=>{S.meta=v.find(x=>x.id==="trip")||{}});
-    sub("wallet","at",v=>S.wallet=v); sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v);
+    sub("wallet","at",v=>S.wallet=v); sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v); sub("claims",null,v=>{S.claims=v; if(S.isOwner) backfillClaims();});
     if(S.canWrite) unsubs.push(S.db.collection("audit").orderBy("at","desc").limit(60).onSnapshot(snap=>{ S.audit=snap.docs.map(d=>({id:d.id,...d.data()})); render(); },()=>{}));
     if(S.isOwner) sub("invites","at",v=>S.invites=v,"desc");
     setTimeout(()=>{S.ready=true; render();},400);
