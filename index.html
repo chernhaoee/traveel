@@ -664,20 +664,23 @@ function viewSpend(){
 }
 
 function todoSwitch(){ return `<div class="seg" role="group" aria-label="List"><button data-tv="todo" aria-pressed="${S.todoView!=="shop"}">To-do</button><button data-tv="shop" aria-pressed="${S.todoView==="shop"}">Shopping list</button></div>`; }
+const shopTags = x => Array.isArray(x.for)?x.for.filter(Boolean):(x.for?[x.for]:[]);
+const shopFor = x => { const t=shopTags(x); return t.length?t.map(pname).join(", "):"Whole group"; };
 function viewShop(){
-  const me=myPerson();
+  const me=myPerson(); const F=S.shopFilter||[];
   let items=S.shopping.filter(x=>!S.hideDone||!x.done);
-  if(S.shopMine&&me) items=items.filter(x=>!x.for||x.for===me.id);
+  if(F.length) items=items.filter(x=>{ const t=shopTags(x); return t.length?t.some(id=>F.includes(id)):F.includes("_all"); });
   const groups=[]; items.forEach(x=>{const g=x.where||"Anywhere"; if(!groups.includes(g)) groups.push(g)});
   const left=S.shopping.filter(x=>!x.done).length;
   return `${todoSwitch()}
   <div class="row"><div><div class="eyebrow">Still to buy</div><div class="big num">${left}</div></div><div class="spacer"></div>
     <button class="btn small plain" data-act="hideDone" aria-pressed="${S.hideDone}">${S.hideDone?"Show bought":"Hide bought"}</button>${W()?`<button class="btn small" data-act="addShop">+ Add</button>`:""}</div>
-  ${me?`<div class="pick" role="group" aria-label="Whose items"><button data-act="shopAll" aria-pressed="${!S.shopMine}">Everyone's</button><button data-act="shopMine" aria-pressed="${!!S.shopMine}">Mine + shared</button></div>`:""}
+  ${S.people.length?`<div class="pick" role="group" aria-label="Show items for"><button data-shopf="" aria-pressed="${!F.length}">Show all</button><button data-shopf="_all" aria-pressed="${F.includes("_all")}">Whole group</button>${S.people.map(p=>`<button data-shopf="${esc(p.id)}" aria-pressed="${F.includes(p.id)}">${esc(p.name)}${me&&me.id===p.id?" (me)":""}</button>`).join("")}</div>
+  ${F.length?`<div class="hint">Showing items for ${F.map(id=>id==="_all"?"the whole group":pname(id)).join(" + ")}. Tap more to combine, or Show all to clear.</div>`:""}`:""}
   ${items.length?groups.map(g=>{const xs=items.filter(x=>(x.where||"Anywhere")===g);
     return `<div class="section"><div class="grouphead"><h3>${esc(g)}</h3><span class="small muted num">${xs.filter(x=>x.done).length}/${xs.length}</span></div>
     <div>${xs.map(x=>`<div class="task${x.done?" done":""}"><input type="checkbox" data-shopcheck="${esc(x.id)}" ${x.done?"checked":""} ${W()?"":"disabled"} aria-label="${esc(x.text)}">
-      <button class="main" ${W()?`data-shop="${esc(x.id)}"`:"disabled"}><div class="ti">${esc(x.text)}</div><div class="sub">${x.for?esc(pname(x.for)):"Shared"}${x.note?` · ${esc(x.note)}`:""}</div></button>${x.price?`<span class="due num">${yen(x.price)}</span>`:""}</div>`).join("")}</div></div>`}).join("")
+      <button class="main" ${W()?`data-shop="${esc(x.id)}"`:"disabled"}><div class="ti">${esc(x.text)}</div><div class="sub">${esc(shopFor(x))}${x.note?` · ${esc(x.note)}`:""}</div></button>${x.price?`<span class="due num">${yen(x.price)}</span>`:""}</div>`).join("")}</div></div>`}).join("")
     :`<div class="empty">${S.shopping.length?"Everything here is bought.":"Nothing on the list yet."}${W()?" Add what you want to buy, and where.":""}</div>`}`;
 }
 function viewTodo(){
@@ -979,21 +982,24 @@ function budgetSheet(){
   });
 }
 function shopSheet(id){
-  const x=id?{...S.shopping.find(y=>y.id===id)}:{text:"",where:"",for:"",price:"",note:""};
+  const x=id?{...S.shopping.find(y=>y.id===id)}:{text:"",where:"",for:[],price:"",note:""}; const tg=shopTags(x);
   const places=[...new Set(S.shopping.map(y=>y.where).filter(Boolean))];
   openSheet(id?"Edit item":"Add to shopping list",`
     <div class="f"><label for="sText">What</label><input id="sText" value="${esc(x.text)}" placeholder="e.g. Pokémon card booster box"></div>
     <div class="grid2"><div class="f"><label for="sWhere">Where</label><input id="sWhere" list="sPlaces" value="${esc(x.where||"")}" placeholder="e.g. Don Quijote"><datalist id="sPlaces">${places.map(w=>`<option value="${esc(w)}">`).join("")}</datalist></div>
       <div class="f"><label for="sPrice">Price (¥, optional)</label><input id="sPrice" inputmode="numeric" value="${esc(x.price||"")}"></div></div>
-    <div class="f"><span class="lab">For</span><div class="pick" id="sFor"><button type="button" data-v="" aria-pressed="${!x.for}">Shared</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${x.for===p.id}">${esc(p.name)}</button>`).join("")}</div></div>
+    <div class="f"><span class="lab">For</span><div class="pick" id="sFor"><button type="button" data-v="" aria-pressed="${!tg.length}">Whole group</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${tg.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div><span class="hint">Tag one or more people, e.g. a gift you and a friend are splitting.</span></div>
     <div class="f"><label for="sNote">Note (optional)</label><input id="sNote" value="${esc(x.note||"")}" placeholder="Size, colour, which flavour…"></div>
     ${id?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="sDel">Delete</button></div>`:""}
     <button class="btn primary" id="sSave">${id?"Save":"Add"}</button>`,p=>{
-    $("#sFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return;$("#sFor",p).querySelectorAll("button").forEach(y=>y.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true")});
+    $("#sFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return; const box=$("#sFor",p), ev0=box.querySelector('[data-v=""]');
+      if(b===ev0){ box.querySelectorAll("button").forEach(y=>y.setAttribute("aria-pressed",String(y===ev0))); return; }
+      b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true"));
+      ev0.setAttribute("aria-pressed",String(![...box.querySelectorAll('button:not([data-v=""])')].some(y=>y.getAttribute("aria-pressed")==="true"))); });
     $("#sSave",p).onclick=async()=>{
       const text=$("#sText",p).value.trim(); if(!text){toast("Write what to buy");return}
       const price=parseFloat($("#sPrice",p).value.replace(/[^\d.]/g,""))||null;
-      const doc={text,where:$("#sWhere",p).value.trim(),for:($("#sFor",p).querySelector('[aria-pressed="true"]')||{dataset:{v:""}}).dataset.v,price,note:$("#sNote",p).value.trim()};
+      const doc={text,where:$("#sWhere",p).value.trim(),for:[...$("#sFor",p).querySelectorAll('button[aria-pressed="true"]:not([data-v=""])')].map(b=>b.dataset.v),price,note:$("#sNote",p).value.trim()};
       const ok=await write(()=> id?S.db.doc("shopping/"+id).update(doc):S.db.collection("shopping").add({...doc,done:false,at:Date.now(),by:S.myId||null}), id?"Saved":"Added",[id?"Edited shopping item":"Added to shopping list",text+(doc.where?" · "+doc.where:"")]);
       if(ok) closeSheet();
     };
@@ -1164,6 +1170,9 @@ document.addEventListener("click",async ev=>{
   const tv=t.closest("[data-tv]"); if(tv){S.todoView=tv.dataset.tv;ls.set("todoView",S.todoView);render();return}
   const sh=t.closest("[data-shop]"); if(sh){shopSheet(sh.dataset.shop);return}
   const ng=t.closest("[data-ng]"); if(ng){S.notesGroup=ng.dataset.ng;render();return}
+  const sf=t.closest("[data-shopf]"); if(sf){ const v=sf.dataset.shopf; let F=[...(S.shopFilter||[])];
+    if(!v) F=[]; else F=F.includes(v)?F.filter(x=>x!==v):[...F,v];
+    S.shopFilter=F; ls.set("shopFilter",JSON.stringify(F)); render(); return; }
   const ivr=t.closest("[data-invrole]"); if(ivr){S.invRole=ivr.dataset.invrole;ls.set("invRole",S.invRole);render();return}
   const th=t.closest("[data-theme-set]"); if(th){ls.set("theme",th.dataset.themeSet);applyTheme();render();return}
   const fxb=t.closest("[data-fx]"); if(fxb){ls.set("fx",fxb.dataset.fx);fxStart();render();return}
@@ -1174,8 +1183,6 @@ document.addEventListener("click",async ev=>{
     case "dayVis": dayVisSheet(); break;
     case "editDay": daySheet(); break;
     case "addShop": shopSheet(null); break;
-    case "shopMine": S.shopMine=true; ls.set("shopMine","1"); render(); break;
-    case "shopAll": S.shopMine=false; ls.set("shopMine",""); render(); break;
     case "addWallet": if(S.canWrite) walletAdd(); break;
     case "editBudget": budgetSheet(); break;
     case "pickMe": { const pid=a.dataset.pid; if(claimedBy(pid)){toast("Someone else already picked that name");break}
@@ -1238,7 +1245,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
 (function boot(){
   const h=(location.hash||"").slice(1);
   S.tab=["plan","spend","todo","notes","trip"].includes(h)?h:ls.get("tab","plan");
-  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); S.shopMine=!!ls.get("shopMine","");
+  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); try{ S.shopFilter=JSON.parse(ls.get("shopFilter","[]"))||[]; }catch(e){ S.shopFilter=[]; }
   render(); setRole();
   const inv=new URLSearchParams(location.search).get("invite"); if(inv) S.invite=inv;
   if(!CONFIGURED){ render(); return; }
