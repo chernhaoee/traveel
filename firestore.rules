@@ -14,6 +14,8 @@ service cloud.firestore {
     function isAdmin() { return isOwner() || (isMember() && myRole() == 'admin'); }
     function isPlanner() { return isAdmin() || (isMember() && myRole() == 'planner'); }
     function canRead() { return isMember() || isOwner(); }
+    function myPid() { return isMember() ? get(memberDoc()).data.get('personId', '-') : '-'; }
+    function seesVis(d) { return !('vis' in d) || 'all' in d.vis || myPid() in d.vis; }
 
     // Who owns the trip. The first person to set it up claims it; it can never be changed from the app.
     match /config/owner {
@@ -58,11 +60,22 @@ service cloud.firestore {
     }
 
     // Uploaded tickets (compressed images / small PDFs).
+    // Ticket files follow the ticket's "who can see it" list (vis: ['all'] or person ids).
     match /files/{id} {
-      allow read: if canRead();
+      allow read: if canRead() && (isAdmin() || resource.data.by == request.auth.uid || seesVis(resource.data));
       allow create: if isPlanner() && request.resource.data.by == request.auth.uid;
       allow delete: if isAdmin() || (isPlanner() && resource.data.by == request.auth.uid);
-      allow update: if false;
+      allow update: if (isAdmin() || (isPlanner() && resource.data.by == request.auth.uid))
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vis']);
+    }
+
+    // Tickets & bookings: everyone, or only the people picked. The Owner and the uploader always see it.
+    match /wallet/{id} {
+      allow read: if canRead() && (isAdmin() || resource.data.by == request.auth.uid || seesVis(resource.data));
+      allow create: if isPlanner() && request.resource.data.vis is list;
+      allow update: if isAdmin() || (isPlanner() && (resource.data.by == request.auth.uid
+                    || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vis'])));
+      allow delete: if isAdmin() || (isPlanner() && resource.data.by == request.auth.uid);
     }
 
     // People (for splitting). Any member can add themselves, by name only, as part of picking their name.
@@ -83,9 +96,9 @@ service cloud.firestore {
 
     // Trip data.
     match /{col}/{id} {
-      allow read: if canRead() && col in ['days','notes','tasks','people','expenses','rates','meta','wallet','shopping'];
-      allow create, update: if isPlanner() && col in ['days','notes','tasks','people','expenses','rates','meta','wallet','shopping'];
-      allow delete: if col in ['days','notes','tasks','expenses','rates','meta','wallet','shopping'] && isPlanner()
+      allow read: if canRead() && col in ['days','notes','tasks','people','expenses','rates','meta','shopping'];
+      allow create, update: if isPlanner() && col in ['days','notes','tasks','people','expenses','rates','meta','shopping'];
+      allow delete: if col in ['days','notes','tasks','expenses','rates','meta','shopping'] && isPlanner()
                     || col == 'people' && isAdmin();
     }
   }
