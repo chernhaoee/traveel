@@ -1203,14 +1203,13 @@ async function renumberDays(extra){ // keep days in date order; extra: [ [id, da
   const b=writeBatch(fs); (extra||[]).forEach(([id,v])=>v?b.set(doc(fs,"days/"+id),v):b.delete(doc(fs,"days/"+id)));
   [...ids].sort((a,c)=>(dateOf(a)||"").localeCompare(dateOf(c)||"")).forEach((id,i)=>{ const cur=S.days.find(d=>d.id===id); if(!cur||cur.order!==i+1) b.set(doc(fs,"days/"+id),{order:i+1},{merge:true}); });
   await b.commit(); }
-// Two versions of the same date are fine as long as nobody would see both.
-const dayAud=v=>new Set((v||[]).length?v:S.people.map(p=>p.id));
-function dayClash(date,vis,exceptId){ const a=dayAud(vis);
-  for(const x of S.days){ if(x.id===exceptId||x.date!==date) continue; const both=[...dayAud(x.visibleTo)].filter(id=>a.has(id));
-    if(both.length) return "There's already a "+fmtDate(date)+" that "+both.map(pname).join(", ")+" can see. "+(S.isOwner?"Use Who can see to give this one to the others.":"Ask the Owner to add another version."); }
-  return ""; }
+// A date can have any number of versions, but only one that everyone can see.
+function dayClash(date,vis,exceptId){
+  if((vis||[]).length) return "";
+  return S.days.some(x=>x.id!==exceptId&&x.date===date&&!(x.visibleTo||[]).length)
+    ? "There's already a "+fmtDate(date)+" that everyone can see. "+(S.isOwner?"Pick who can see this one.":"Add your stops to that one instead.") : ""; }
 const newDayId=date=>S.days.some(x=>x.id===date)?date+"-"+uid().slice(0,4):date;
-const dayLabel=x=>fmtDate(x.date)+" · "+(x.city||"")+(S.days.some(y=>y!==x&&y.date===x.date)&&(x.visibleTo||[]).length?" (only "+x.visibleTo.map(pname).join(", ")+")":"");
+const dayLabel=x=>fmtDate(x.date)+" · "+(x.city||"")+(S.days.some(y=>y!==x&&y.date===x.date)?((x.visibleTo||[]).length?" (only "+x.visibleTo.map(pname).join(", ")+")":" (everyone)"):"");
 const addDays=(ds,n)=>{ const t=new Date(ds+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
 function addDaySheet(){
   const last=[...S.days].sort((a,b)=>a.date.localeCompare(b.date)).pop()||{};
