@@ -516,6 +516,8 @@ const role = () => !S.db?"Not signed in":(ROLE_LABEL[(S.member||{}).role]||"Trav
 function transportFor(d){
   const [y,m,dd]=d.date.split("-").map(Number);
   const key=new Date(Date.UTC(y,m-1,dd)).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+  // Transport notes are keyed by date. When a date has more than one version, they belong to the original one (id = the date).
+  if(d.id!==d.date&&S.days.some(x=>x.id===d.date)) return null;
   return S.notes.find(n=>n.group==="Transport"&&(n.title||"").startsWith(key+" "));
 }
 function addressFor(hotel){ return (S.meta.addresses||[]).find(a=>hotel&&a.match&&hotel.includes(a.match)); }
