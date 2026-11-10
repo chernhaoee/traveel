@@ -1196,7 +1196,7 @@ function itemSheet(dayId,index,preset){
     <div class="f"><label for="iMap">Google Maps search</label><input id="iMap" value="${esc(it.map)}" placeholder="Place name + area"><span class="hint">Leave empty for no map link.</span></div>
     <div class="f"><span class="lab">Who's this for</span><div class="pick" id="iFor"><button type="button" data-v="" aria-pressed="${!(it.for||[]).length}">Everyone</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${(it.for||[]).includes(p.id)}">${esc(p.name)}</button>`).join("")}</div><span class="hint">Tag stops that only some of you do, e.g. two people still in Tokyo while the others are already in Kyoto. Everyone sees their own version of the day.</span></div>
     <label class="row small" style="font-weight:600"><input type="checkbox" id="iStar" ${it.star?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Low-crowd spot</label>
-    ${isNew?"":`<div class="row"><button class="btn small plain" id="iUp" ${index===0?"disabled":""}>Move up</button><button class="btn small plain" id="iDown" ${index===d.items.length-1?"disabled":""}>Move down</button><div class="spacer"></div><button class="btn small danger" id="iDel">Delete</button></div>`}
+    ${isNew?"":`<div class="row"><div class="spacer"></div><button class="btn small danger" id="iDel">Delete</button></div>`}
     <button class="btn primary" id="iSave">${isNew?"Add to day":"Save"}</button>`,p=>{
     $("#iFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return; const box=$("#iFor",p), e0=box.querySelector('[data-v=""]');
       if(b===e0){ box.querySelectorAll("button").forEach(y=>y.setAttribute("aria-pressed",String(y===e0))); return; }
@@ -1218,8 +1218,6 @@ function itemSheet(dayId,index,preset){
       }
     };
     if(!isNew){
-      const mv=async dir=>{ const items=[...d.items]; const j=index+dir; [items[index],items[j]]=[items[j],items[index]]; items[j]={...items[j],...read()}; if(await write(()=>S.db.doc("days/"+dayId).update({items}),"",["Reordered stops",fmtDate(d.date)])){ closeSheet(); } };
-      $("#iUp",p).onclick=()=>mv(-1); $("#iDown",p).onclick=()=>mv(1);
       twoStep($("#iDel",p),"Tap again to delete",async()=>{ const gone=(d.items[index]||{}).title; const items=[...d.items]; items.splice(index,1); if(await write(()=>S.db.doc("days/"+dayId).update({items}),"Deleted",["Deleted stop",gone+" · "+fmtDate(d.date)])) closeSheet(); });
     }
   });
