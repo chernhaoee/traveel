@@ -57,6 +57,13 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .it.other{opacity:.55}
 .wpname{text-decoration:underline dotted;text-decoration-color:var(--accent);text-underline-offset:3px;text-decoration-thickness:2px;cursor:zoom-in}
 .wpic{font-size:12px;margin-left:5px;opacity:.8;text-decoration:none;display:inline-block}
+.day .wxmini{display:block;font-style:normal;font-size:11px;line-height:1.1;margin-top:2px;font-weight:600;white-space:nowrap}
+.day .wxmini.typ{opacity:.55;font-weight:500}
+.wxline{display:flex;align-items:center;gap:8px;margin:6px 0 4px}.wxbig{font-size:26px;line-height:1}
+.dayhead.wx-rain,.dayhead.wx-storm{background:linear-gradient(180deg,rgba(90,130,180,.16),transparent);border-radius:16px;padding:10px 12px}
+.dayhead.wx-clear{background:linear-gradient(180deg,rgba(255,190,80,.16),transparent);border-radius:16px;padding:10px 12px}
+.dayhead.wx-cloud{background:linear-gradient(180deg,rgba(140,150,165,.14),transparent);border-radius:16px;padding:10px 12px}
+.dayhead.wx-snow{background:linear-gradient(180deg,rgba(190,215,240,.28),transparent);border-radius:16px;padding:10px 12px}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
 .mvp .sub{color:#c9bde0;font-size:13px}
@@ -284,14 +291,16 @@ async function write(fn,okMsg,log){
 
 /* ---------- theme ---------- */
 /* ---------- background animation ---------- */
-const FX_LIST=[["off","Off"],["sakura","🌸 Sakura"],["daruma","Daruma"],["snow","❄️ Snow"],["leaves","🍁 Autumn leaves"]];
-const fxKind=()=>{ const v=ls.get("fx",""); if(v) return v; return (window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)?"off":"sakura"; };
+const FX_LIST=[["off","Off"],["weather","🌦 Match the weather"],["sakura","🌸 Sakura"],["daruma","Daruma"],["snow","❄️ Snow"],["leaves","🍁 Autumn leaves"]];
+const fxPick=()=>{ const v=ls.get("fx",""); if(v) return v; return (window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)?"off":"sakura"; };
+const fxKind=()=>{ const v=fxPick(); if(v!=="weather") return v; const w=wxForDay(S.days.find(d=>d.id===S.dayId)); const k=w&&!w.typical?w.kind:null; return k==="rain"||k==="storm"?"rain":k==="snow"?"snow":"sakura"; };
 const FX={kind:"off",parts:[],raf:0,w:0,h:0,dpr:1,last:0};
 function fxResize(){ const c=$("#fx"); if(!c) return; FX.dpr=Math.min(2,window.devicePixelRatio||1); FX.w=innerWidth; FX.h=innerHeight; c.width=FX.w*FX.dpr; c.height=FX.h*FX.dpr; }
 function fxNew(top){
   const k=FX.kind, r=Math.random, S2=fxSprites(), pick=a=>a[Math.floor(r()*a.length)];
   const base={x:r()*FX.w,y:top?-40-r()*FX.h*.2:r()*FX.h,rot:r()*6.28,vr:(r()-.5)*.03,ph:r()*6.28,sw:.4+r()*1.2,flip:r()*6.28,vf:.02+r()*.04};
   if(k==="snow") return {...base,s:1.5+r()*3.2,vy:.35+r()*.8,vx:(r()-.5)*.3};
+  if(k==="rain") return {...base,s:10+r()*12,vy:7+r()*5,vx:-.8-r()*.6,sw:0,vr:0};
   if(k==="daruma") return {...base,img:r()<.8?S2.daruma[0]:S2.daruma[1],s:36+r()*12,vy:.45+r()*.5,vx:(r()-.5)*.2,vr:(r()-.5)*.02,vf:0};
   if(k==="leaves") return {...base,img:pick(S2.maples),s:28+r()*12,vy:.55+r()*.8,vx:(r()-.5)*.4};
   const fl=r()<.15; return {...base,img:fl?S2.flower:pick(S2.petals),s:fl?26+r()*8:14+r()*8,vy:.45+r()*.7,vx:.15+r()*.45}; // sakura
@@ -379,6 +388,7 @@ function fxFrame(t){
     if(p.y>FX.h+30||p.x>FX.w+40||p.x<-40) Object.assign(p,fxNew(true));
     g.save(); g.translate(p.x,p.y);
     if(FX.kind==="snow"){ g.fillStyle=dark?"#ffffff":"#9fb4c8"; g.globalAlpha=dark?.55:.45; g.beginPath(); g.arc(0,0,p.s,0,6.28); g.fill(); }
+    else if(FX.kind==="rain"){ g.strokeStyle=dark?"#cfe0ff":"#6f8fb0"; g.globalAlpha=dark?.35:.4; g.lineWidth=1.2; g.lineCap="round"; g.beginPath(); g.moveTo(0,0); g.lineTo(p.vx*2.2,p.s); g.stroke(); }
     else { p.flip+=p.vf*dt; g.rotate(p.rot); if(p.vf) g.scale(.35+.65*Math.abs(Math.cos(p.flip)),1); g.drawImage(p.img,-p.s/2,-p.s/2,p.s,p.s); }
     g.restore();
   }
@@ -388,7 +398,7 @@ function fxStart(){
   cancelAnimationFrame(FX.raf); FX.last=0; FX.kind=fxKind(); const c=$("#fx"); if(!c) return;
   fxResize(); const g=c.getContext("2d"); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,c.width,c.height);
   if(FX.kind==="off"){ FX.parts=[]; return; }
-  const n=Math.round(Math.min(60,Math.max(FX.kind==="daruma"?10:18,FX.w*FX.h/(FX.kind==="snow"?9000:FX.kind==="daruma"?30000:16000))));
+  const n=Math.round(Math.min(FX.kind==="rain"?90:60,Math.max(FX.kind==="daruma"?10:18,FX.w*FX.h/(FX.kind==="snow"?9000:FX.kind==="rain"?5000:FX.kind==="daruma"?30000:16000))));
   FX.parts=Array.from({length:n},()=>fxNew(false)); FX.raf=requestAnimationFrame(fxFrame);
 }
 addEventListener("resize",()=>{ if(FX.kind!=="off") fxResize(); });
@@ -729,12 +739,47 @@ function wpSheet(q,name){ const h=wpGet(q)||{none:1}; const label=name||q.split(
     <div style="margin-top:10px;font-weight:700">${esc(h.t)}</div>${h.x?`<div class="small" style="margin-top:4px;line-height:1.5">${esc(h.x)}</div>`:""}`}
     <div class="row" style="margin-top:12px;flex-wrap:wrap"><a class="btn small" href="${esc(mapUrl(q))}" target="_blank" rel="noopener">Google Maps</a><a class="btn small plain" href="${esc(gImg)}" target="_blank" rel="noopener">See photos on Google ↗</a>${h.url?`<a class="btn small plain" href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.src||"Wikipedia")} ↗</a>`:""}</div>
     ${h.none?"":`<div class="hint">Photo${h.x?" and text":""} from ${esc(h.src||"Wikipedia")}.</div>`}`); }
+/* ---------- weather (Open-Meteo, free, no key; cached per phone) ---------- */
+const WX_CITIES={tokyo:[35.681,139.767],kyoto:[35.011,135.768],osaka:[34.694,135.502],uji:[34.889,135.807],kawaguchiko:[35.498,138.769],fuji:[35.498,138.769],kamakura:[35.319,139.547],nara:[34.685,135.805],narita:[35.776,140.318],yokohama:[35.444,139.638],hakone:[35.233,139.107]};
+const WX={}, WXbusy=new Set(); let wxTimer=null;
+function wxCityOf(d){ if(!d||!d.city) return null; const parts=String(d.city).split(/→|->|\(|\)|,|\//).map(x=>x.trim().toLowerCase()).filter(Boolean);
+  for(const p of parts){ for(const k of Object.keys(WX_CITIES)) if(p.includes(k)) return k; } return parts.find(p=>!/home|kuala lumpur|disney/.test(p))||null; }
+function wxCode(c){ if(c==null) return {kind:"cloud",icon:"☁️",label:"Cloudy"};
+  if(c===0) return {kind:"clear",icon:"☀️",label:"Sunny"}; if(c===1) return {kind:"clear",icon:"🌤️",label:"Mostly sunny"}; if(c===2) return {kind:"cloud",icon:"⛅",label:"Partly cloudy"};
+  if(c===3) return {kind:"cloud",icon:"☁️",label:"Cloudy"}; if(c===45||c===48) return {kind:"cloud",icon:"🌫️",label:"Foggy"};
+  if((c>=51&&c<=67)||(c>=80&&c<=82)) return {kind:"rain",icon:"🌧️",label:c<=57?"Drizzle":"Rain"};
+  if((c>=71&&c<=77)||c===85||c===86) return {kind:"snow",icon:"🌨️",label:"Snow"}; if(c>=95) return {kind:"storm",icon:"⛈️",label:"Thunderstorms"};
+  return {kind:"cloud",icon:"☁️",label:"Cloudy"}; }
+function wxLoad(city){ if(!city) return null; if(WX[city]) return WX[city]; try{ const v=JSON.parse(localStorage.getItem("wx:"+city)||"null"); if(v) WX[city]=v; }catch(e){} return WX[city]||null; }
+async function wxCoords(city){ if(WX_CITIES[city]) return WX_CITIES[city];
+  try{ const j=await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&name="+encodeURIComponent(city))).json(); const r=j&&j.results&&j.results[0]; if(r) return [r.latitude,r.longitude]; }catch(e){} return null; }
+const WXfail={};
+async function wxFetch(city){ if(!city||WXbusy.has(city)||Date.now()-(WXfail[city]||0)<10*60e3) return; const have=wxLoad(city); const now=Date.now();
+  if(have&&now-(have.fAt||0)<3*3600e3&&now-(have.cAt||0)<7*864e5) return; WXbusy.add(city);
+  try{ if(window.__WX_SAMPLE){ WX[city]=window.__WX_SAMPLE(city); }
+    else { const c=await wxCoords(city); if(!c) throw 0; const out={...(have||{})}; const tz="&timezone=Asia%2FTokyo";
+      if(!have||now-(have.fAt||0)>=3*3600e3){ const j=await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c[0]}&longitude=${c[1]}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&forecast_days=16${tz}`)).json();
+        out.f={}; (j.daily&&j.daily.time||[]).forEach((t,i)=>out.f[t]={code:j.daily.weather_code[i],hi:j.daily.temperature_2m_max[i],lo:j.daily.temperature_2m_min[i],rain:j.daily.precipitation_probability_max[i],wind:j.daily.wind_speed_10m_max[i]}); out.fAt=now; }
+      if(!have||now-(have.cAt||0)>=7*864e5){ // typical weather: same dates over the last 3 years
+        const ds=S.days.map(d=>d.date).sort(); if(ds.length){ const acc={}; const y0=+ds[0].slice(0,4);
+          for(const back of [1,2,3]){ const sh=d=>(+d.slice(0,4)-back)+d.slice(4); const j=await (await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${c[0]}&longitude=${c[1]}&start_date=${sh(ds[0])}&end_date=${sh(ds[ds.length-1])}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum${tz}`)).json();
+            (j.daily&&j.daily.time||[]).forEach((t,i)=>{ const key=(+t.slice(0,4)+back)+t.slice(4); const a=acc[key]||(acc[key]={hi:0,lo:0,wet:0,n:0}); a.hi+=j.daily.temperature_2m_max[i]||0; a.lo+=j.daily.temperature_2m_min[i]||0; a.wet+=(j.daily.precipitation_sum[i]||0)>=1?1:0; a.n++; }); }
+          out.c={}; Object.entries(acc).forEach(([k,a])=>out.c[k]={hi:a.hi/a.n,lo:a.lo/a.n,wet:a.wet/a.n}); out.cAt=now; } }
+      WX[city]=out; }
+    try{ localStorage.setItem("wx:"+city,JSON.stringify(WX[city])); }catch(e){}
+    clearTimeout(wxTimer); wxTimer=setTimeout(()=>{ render(); if(fxPick()==="weather"&&fxKind()!==FX.kind) fxStart(); },120);
+  }catch(e){ WXfail[city]=Date.now(); } WXbusy.delete(city); }
+function wxForDay(d){ const city=wxCityOf(d); if(!city) return null; const w=wxLoad(city); if(!w) return null;
+  const f=w.f&&w.f[d.date]; if(f) return {...wxCode(f.code),hi:f.hi,lo:f.lo,rain:f.rain,wind:f.wind,city};
+  const c=w.c&&w.c[d.date]; if(c) return {typical:true,kind:c.wet>=.5?"rain":"cloud",icon:c.wet>=.5?"🌦️":"🗓️",label:"Typical",hi:c.hi,lo:c.lo,wet:c.wet,city};
+  return null; }
+const OUTDOOR=/bike|e-bike|park|falls|hike|beach|viewpoint|pagoda|fushimi|inari|arashiyama|bamboo|river|oishi|chureito|todoroki|valley|garden|cruise|ropeway|lake|shore|crossing|countdown|torii|walk/i;
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
   if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
   if(!V.find(d=>d.id===S.dayId)){ const t=todayJST(); S.dayId=(V.find(d=>d.date===t)||V[0]).id; }
   const d=V.find(x=>x.id===S.dayId), idx=S.days.indexOf(d);
-  const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}</button>`).join("");
+  const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}${(()=>{ const w=wxForDay(x); wxFetch(wxCityOf(x)); return w?`<i class="wxmini${w.typical?" typ":""}" title="${esc(w.typical?"Typical for this date":w.label)}">${w.typical?"":w.icon}${Math.round(w.hi)}°</i>`:""; })()}</button>`).join("");
   const vis=(d.visibleTo||[]);
   const items=(d.items||[]); const me=myPerson();
   const forOf=it=>Array.isArray(it.for)?it.for.filter(Boolean):[];
@@ -757,9 +802,15 @@ function viewPlan(){
   const mvp=S.awards&&S.awards.revealedAt?mvpCard(S.awards,{owner:S.isOwner}):(S.isOwner&&todayJST()>=TRIP_END?`<div class="mvp"><h3>🏆 TRIP'S OVER</h3><div class="sub">Time to hand out the awards: Top Spender, The AFK and more.</div><div class="row" style="margin-top:12px"><button class="btn primary small" data-act="mvpPreview">See the MVPs</button></div></div>`:"");
   return `${mvp}
   <div class="days" role="group" aria-label="Days">${strip}</div>
-  <div class="dayhead">
+  <div class="dayhead${(()=>{ const w=wxForDay(d); return w&&!w.typical?" wx-"+w.kind:""; })()}">
     <div class="eyebrow">Day ${idx+1} of ${S.days.length} · ${esc(fmtDate(d.date,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>
     <h2>${esc(d.title||d.city)}</h2>
+    ${(()=>{ const w=wxForDay(d); if(!w) return ""; const city=w.city.replace(/^./,c=>c.toUpperCase());
+      if(w.typical) return `<div class="small muted" style="margin:6px 0 4px">🗓️ Usually <strong>${Math.round(w.hi)}° / ${Math.round(w.lo)}°</strong> in ${esc(city)} around now · rain on ~${Math.round(w.wet*100)}% of days <span class="muted">· real forecast ~16 days before</span></div>`;
+      const out=(d.items||[]).filter(it=>OUTDOOR.test((it.title||"")+" "+(it.map||""))).map(it=>it.title);
+      return `<div class="wxline"><span class="wxbig">${w.icon}</span><span><strong>${esc(w.label)}</strong> · ${Math.round(w.hi)}° / ${Math.round(w.lo)}° · rain ${w.rain??"–"}%${w.wind>=30?" · windy":""} <span class="small muted">${esc(city)}</span></span></div>
+        ${(w.rain>=60||w.kind==="rain"||w.kind==="storm")?`<div class="hint" style="margin:6px 0 0">☔ Rain likely, so bring an umbrella.${out.length?` Outdoor today: ${esc(out.slice(0,4).join(", "))}${out.length>4?"…":""}. Consider swapping with a drier day.`:""}</div>`:""}
+        ${w.kind==="snow"?`<div class="hint" style="margin:6px 0 0">🌨 Snow possible: grippy shoes, and check trains and buses before heading out.</div>`:""}`; })()}
     <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${S.isOwner?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
   </div>
   ${(ad||tix.length)?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
@@ -1031,7 +1082,7 @@ function viewTrip(){
     <div class="swatches">${PRESETS.map(c=>`<button class="sw" style="background:${c}" data-accent="${c}" aria-label="Accent ${c}" aria-pressed="${acc.toLowerCase()===c}"></button>`).join("")}<input type="color" id="accentPick" value="${esc(acc)}" aria-label="Pick any colour"></div>
     <div class="hint">Only on this phone. Lines, borders and buttons use it.</div>
     <div class="lab">Background animation</div>
-    <div class="pick" role="group" aria-label="Background animation">${FX_LIST.map(([k,l])=>`<button type="button" data-fx="${k}" aria-pressed="${fxKind()===k}">${l}</button>`).join("")}</div>
+    <div class="pick" role="group" aria-label="Background animation">${FX_LIST.map(([k,l])=>`<button type="button" data-fx="${k}" aria-pressed="${fxPick()===k}">${l}</button>`).join("")}</div>
     <div class="hint">Falls softly behind the app. Only on this phone; pauses when the app is in the background.</div>
   </div>
   ${(m.flights||m.hotels)?`<div class="card section"><h3>Flights & stays</h3><dl class="kv" style="grid-template-columns:auto 1fr">${(m.flights||[]).map(f=>`<dt>${esc(f.when??f[0])}</dt><dd style="text-align:left;font-weight:500">${esc(f.what??f[1])}</dd>`).join("")}${(m.hotels||[]).map(h=>`<dt>${esc(h.when??h[0])}</dt><dd style="text-align:left;font-weight:500"><a href="${esc(mapUrl(h.what??h[1]))}" target="_blank" rel="noopener">${esc(h.what??h[1])}</a></dd>`).join("")}</dl></div>`:""}`;
@@ -1463,7 +1514,7 @@ document.addEventListener("click",async ev=>{
   if(t.closest("#roleChip")){ if(S.member){S.tab="trip";ls.set("tab","trip");render();window.scrollTo(0,0);} return; }
   const tab=t.closest("nav.tabs button"); if(tab){S.tab=tab.dataset.tab;ls.set("tab",S.tab);render();window.scrollTo(0,0);return}
   if(t.closest("#sheetRoot")) return;
-  const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render();return}
+  const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render(); if(fxPick()==="weather"&&fxKind()!==FX.kind) fxStart(); return}
   const wpb=t.closest("[data-wp]"); if(wpb){ ev.preventDefault(); ev.stopPropagation(); wpSheet(wpb.dataset.wp,wpb.dataset.wpname); return; }
   const it=t.closest("[data-item]"); if(it&&W()){itemSheet(S.dayId,+it.dataset.item);return}
   const ex=t.closest("[data-exp]"); if(ex){expenseSheet(ex.dataset.exp,!!t.closest("[data-bankfocus]"));return}
