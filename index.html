@@ -394,6 +394,7 @@ function rateFor(date){
 const isRM = e => e.cur==="MYR";
 function est(e){ if(isRM(e)) return e.rm||0; return e.rate100? e.yen*e.rate100/100 : null }
 function yenEq(e){ if(!isRM(e)) return e.yen||0; const r=e.rate100||(rateFor(e.date)||{}).rate100; return r?(e.rm||0)/r*100:0; }
+const yenKnown = e => !isRM(e) || !!(e.rate100||(rateFor(e.date)||{}).rate100);
 const amtLabel = e => isRM(e)?rm(e.rm||0):yen(e.yen||0);
 function basis(e){ if(isRM(e)) return e.rm||0; if(e.method==="card"&&e.bank>0) return e.bank; return est(e) }
 function totals(){
@@ -649,14 +650,46 @@ function myBudget(){
   let yenShare=0,rmShare=0,paid=0,paidRM=0;
   for(const e of S.expenses){
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id));
-    if(split.includes(me.id)){ yenShare+=yenEq(e)/split.length; const b=basis(e); if(b!=null) rmShare+=b/split.length; }
+    if(split.includes(me.id)){ yenShare+=yenEq(e)/split.length; let b=basis(e); if(b==null){ const r=(rateFor(e.date)||{}).rate100; if(r) b=(e.yen||0)*r/100; } if(b!=null) rmShare+=b/split.length; }
     if(e.paidBy===me.id){ paid+=yenEq(e); const b=basis(e); if(b!=null) paidRM+=b; }
   }
-  const budget=Number(ls.get("budget_"+me.id,"186000"))||186000;
-  const cur=ls.get("budgetCur_"+me.id,"JPY"), bRM=Number(ls.get("budgetRM_"+me.id,""))||0, bRate=Number(ls.get("budgetRate_"+me.id,""))||0;
+  let cur=ls.get("budgetCur_"+me.id,"JPY"); const bRM=Number(ls.get("budgetRM_"+me.id,""))||0, bRate=0;
+  if(cur==="MYR"&&!bRM) cur="JPY";
+  const budget=cur==="MYR"?bRM:(Number(ls.get("budget_"+me.id,"186000"))||186000);
+  const spent=cur==="MYR"?rmShare:yenShare; const fmt=cur==="MYR"?rm:yen;
   const start=Date.UTC(2026,11,20), end=Date.UTC(2027,0,4), t=Date.parse(todayJST());
   const daysIn=Math.max(0,Math.min(16,Math.floor((t-start)/864e5)+1));
-  return {me,yenShare,rmShare,paid,paidRM,budget,daysIn,cur,bRM,bRate};
+  return {me,yenShare,rmShare,paid,paidRM,budget,spent,fmt,daysIn,cur,bRM,bRate};
+}
+function viewMine(){
+  const me=myPerson(); if(!me) return "";
+  const mineE=S.expenses.filter(e=>(e.split&&e.split.length?e.split:S.people.map(p=>p.id)).includes(me.id));
+  const share=e=>{ const n=(e.split&&e.split.length?e.split.length:S.people.length)||1; const b=basis(e); return {rm:b==null?null:b/n, y:yenEq(e)/n, n}; };
+  let tot=0,totY=0,noRate=0; const cats={};
+  mineE.forEach(e=>{ const x=share(e); totY+=x.y; if(x.rm==null) noRate++; else { tot+=x.rm; cats[e.cat||"Other"]=(cats[e.cat||"Other"]||0)+x.rm; } });
+  const maxc=Math.max(1,...Object.values(cats)); const D=myDebts(); const owed=D.filter(d=>d[1]>0).reduce((a,d)=>a+d[1],0), owe=D.filter(d=>d[1]<0).reduce((a,d)=>a-d[1],0);
+  const byDate={}; [...mineE].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0)).forEach(e=>{(byDate[e.date]=byDate[e.date]||[]).push(e)});
+  return `
+  <div class="section">
+    <div class="eyebrow">My spending</div>
+    <div class="big num">${rm(tot)}</div><div class="small muted">${mineE.every(yenKnown)&&totY?`≈ ${yen(totY)} · `:""}${mineE.length} item${mineE.length===1?"":"s"}${noRate?` · ${noRate} without a rate yet`:""}</div>
+    <div class="card"><dl class="kv">
+      <dt>I paid up front</dt><dd>${rm(S.expenses.filter(e=>e.paidBy===me.id).reduce((a,e)=>a+(basis(e)||0),0))}</dd>
+      <dt>Others owe me</dt><dd class="${owed>0.005?"pos":""}">${rm(owed)}</dd>
+      <dt>I owe others</dt><dd class="${owe>0.005?"neg":""}">${rm(owe)}</dd>
+    </dl><div class="hint" style="margin-top:6px">Your share of everything you're in: your half of a shared ticket, your quarter of a group dinner, all of your own stuff. Details per person are under Group → Who owes who.</div></div>
+  </div>
+  ${Object.keys(cats).length?`<div class="section"><h3>Where my money went</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${rm(v)} · ${(v/tot*100).toFixed(0)}%</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
+  <div class="section"><div class="row"><h3>My items</h3><div class="spacer"></div>${W()?`<button class="btn small" data-act="addExp">+ Add</button>`:""}</div>
+  ${Object.keys(byDate).length?Object.entries(byDate).map(([dt,arr])=>`
+    <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${rm(arr.reduce((a,e)=>a+(share(e).rm||0),0))}</span></div>
+    <div class="list">${arr.map(e=>{ const x=share(e); return `
+      <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
+        <div class="main"><div class="ti">${esc(e.title||e.cat)}</div>
+          <div class="sub">${esc(e.cat||"Other")} · ${x.n>1?`split ${x.n} ways`:"just me"}${e.paidBy===me.id?" · I paid":` · ${esc(pname(e.paidBy))} paid`}</div></div>
+        <div class="amt">${x.rm==null?"—":rm(x.rm)}<small>${x.n>1?`of ${amtLabel(e)}`:amtLabel(e)}</small></div>
+      </button>`}).join("")}</div>`).join(""):`<div class="empty">Nothing yet. Anything you're split into shows up here.</div>`}
+  </div>`;
 }
 function viewSpend(){
   const T=totals(); const date=S.rateDate||todayJST(); const r=rateFor(date);
@@ -676,27 +709,29 @@ function viewSpend(){
         </div>
         <div class="amt">${isRM(e)?`${rm(e.rm||0)}<small>Charged in ringgit</small>`:`${yen(e.yen)}<small>${v==null?"Rate: not set":"Rate: "+rm(v)}${e.method==="card"?(e.bank>0?`<br>Bank: ${rm(e.bank)} <span class="${e.bank>v?"neg":"pos"}">${v?`(${e.bank>v?"+":""}${((e.bank-v)/v*100).toFixed(1)}%)`:""}</span>`:"<br>Bank: —"):""}</small>`}</div>
       </button>`}).join("")}</div>`).join(""):`<div class="empty">No spending yet. Add the first one with the button above.</div>`;
-  const bpct=B?Math.min(100,B.yenShare/B.budget*100):0;
+  const bpct=B?Math.min(100,B.spent/B.budget*100):0;
+  const mine=!!myPerson()&&(S.spendView||"mine")==="mine";
   return `
+  ${myPerson()?`<div class="seg" role="group" aria-label="Spending view"><button data-spendview="mine" aria-pressed="${mine}">My spending</button><button data-spendview="group" aria-pressed="${!mine}">${S.isOwner?"Whole group":"Group"}</button></div>`:""}
+  ${mine?`
   <div class="card section">
     <div class="row"><h3>My budget</h3><div class="spacer"></div>${B?`<button class="btn small plain" data-act="editBudget">Set budget</button>`:""}</div>
-    ${B?`<div><span class="big num" style="font-size:24px">${yen(B.yenShare)}</span> <span class="muted">of ${yen(B.budget)}</span></div>
-      ${B.cur==="MYR"&&B.bRM&&B.bRate?`<div class="small muted">Budget set as ${rm(B.bRM)} at RM ${B.bRate.toFixed(4).replace(/0+$/,"").replace(/\.$/,"")} per ¥100</div>`:""}
+    ${B?`<div><span class="big num" style="font-size:24px">${B.fmt(B.spent)}</span> <span class="muted">of ${B.fmt(B.budget)}</span></div>
       <div class="bar" style="height:8px"><i style="width:${bpct.toFixed(1)}%;${bpct>=100?"background:var(--bad)":""}"></i></div>
       <dl class="kv small">
-        <dt>My share in ringgit (actual)</dt><dd>${rm(B.rmShare)}</dd>
-        <dt>Left</dt><dd class="${B.budget-B.yenShare<0?"neg":""}">${yen(B.budget-B.yenShare)}${B.cur==="MYR"&&B.bRate?`<br><span class="small muted">≈ ${rm((B.budget-B.yenShare)*B.bRate/100)}</span>`:""}</dd>
-        ${B.daysIn?`<dt>Per day so far (${B.daysIn} of 16 days)</dt><dd>${yen(B.yenShare/B.daysIn)}</dd><dt>Left per remaining day</dt><dd>${B.daysIn<16?yen((B.budget-B.yenShare)/(16-B.daysIn)):"—"}</dd>`:""}
-        <dt>I paid for the group</dt><dd>${rm(B.paidRM)}<br><span class="small muted">≈ ${yen(B.paid)}</span></dd>
+        <dt>Left</dt><dd class="${B.budget-B.spent<0?"neg":""}">${B.fmt(B.budget-B.spent)}${B.cur==="MYR"&&tr?`<br><span class="small muted">≈ ${yen((B.budget-B.spent)/tr.rate100*100)} at today's rate</span>`:""}</dd>
+        ${B.daysIn?`<dt>Per day so far (${B.daysIn} of 16 days)</dt><dd>${B.fmt(B.spent/B.daysIn)}</dd><dt>Left per remaining day</dt><dd>${B.daysIn<16?B.fmt((B.budget-B.spent)/(16-B.daysIn)):"—"}</dd>`:""}
       </dl>
-      <div class="hint">Your share of every expense you're split into. Things paid in ringgit count at that day's rate. Only you see this, saved on this phone.</div>`
+      <div class="hint">Your share of every expense you're split into, e.g. a RM 4,000 stay split 4 ways takes RM 1,000 off. ${B.cur==="MYR"?"Yen spending counts at that day's rate (or your bank amount when filled in).":"Ringgit spending counts at that day's rate."} Only you see this, saved on this phone.</div>`
     :`<div class="muted small">Pick your name in the Trip tab (<strong>You → Pick</strong>) to see your own budget.</div>`}
   </div>
+`:""}
   <div class="card section">
     <h3>Quick convert</h3>
     <div class="row" style="flex-wrap:nowrap"><span class="muted">¥</span><input id="cvY" inputmode="numeric" value="${esc(S.cv||"")}" placeholder="e.g. 5000" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 12px;font-size:18px"><span class="big num" style="font-size:20px" id="cvR">${S.cv&&tr?rm(parseFloat(S.cv)*tr.rate100/100):"RM —"}</span></div>
     <div class="hint">${tr?`At RM ${Number(tr.rate100).toFixed(3)} per ¥100 (${esc(fmtDate(tr.date))}). Your bank will add a little on top.`:"Save a rate below first."}</div>
   </div>
+  ${mine?viewMine():`
   <div class="section">
     <div class="row" style="align-items:flex-end"><div><div class="eyebrow">${S.isOwner?"Total spent (everyone)":"Total spent (what you can see)"}</div><div class="big num">${yen(T.y)}</div>${T.myrN?`<div class="small muted">+ ${rm(T.myr)} paid in ringgit (${T.myrN} item${T.myrN>1?"s":""})</div>`:""}</div><div class="spacer"></div>${W()?`<button class="btn primary" data-act="addExp">+ Add</button>`:""}</div>
     <div class="card"><dl class="kv">
@@ -720,7 +755,7 @@ function viewSpend(){
       <div class="hint" style="margin-top:8px">Uses the ringgit amount for things charged in RM, the bank amount when it's filled in, otherwise yen × the day's rate.</div></div>`:`<div class="empty">Add the people in the Trip tab to split costs.</div>`}
   </div>
   ${Object.keys(cats).length?`<div class="section"><h3>By category${S.isOwner?"":" (what you can see)"}</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${yen(v)}</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
-  <div class="section"><h3>All spending</h3>${list}</div>`;
+  <div class="section"><h3>All spending</h3>${list}</div>`}`;
 }
 
 function todoSwitch(){ return `<div class="seg" role="group" aria-label="List"><button data-tv="todo" aria-pressed="${S.todoView!=="shop"}">To-do</button><button data-tv="shop" aria-pressed="${S.todoView==="shop"}">Shopping list</button></div>`; }
@@ -1021,29 +1056,27 @@ function walletAdd(){
 }
 function budgetSheet(){
   const me=myPerson(); if(!me) return;
-  const tr=rateFor(todayJST()); const defRate=tr&&tr.rate100?tr.rate100:"";
+  const tr=rateFor(todayJST());
   let cur=ls.get("budgetCur_"+me.id,"JPY");
-  const yv=ls.get("budget_"+me.id,"186000"), rv=ls.get("budgetRM_"+me.id,""), rr=ls.get("budgetRate_"+me.id,"")||String(defRate);
+  const yv=ls.get("budget_"+me.id,"186000"), rv=ls.get("budgetRM_"+me.id,"");
   openSheet("My budget",`
-    <div class="seg" role="group" id="bCur"><button type="button" data-v="JPY" aria-pressed="${cur==="JPY"}">Yen ¥</button><button type="button" data-v="MYR" aria-pressed="${cur==="MYR"}">Ringgit RM</button></div>
-    <div id="bJPY" ${cur==="MYR"?"hidden":""}><div class="f"><label for="bVal">Budget for the trip (¥)</label><input id="bVal" inputmode="numeric" value="${esc(yv)}"></div></div>
-    <div id="bMYR" ${cur==="JPY"?"hidden":""}>
-      <div class="f"><label for="bRM">Budget for the trip (RM)</label><input id="bRM" inputmode="decimal" placeholder="e.g. 4000" value="${esc(rv)}"></div>
-      <div class="f"><label for="bRate">Rate: RM per ¥100</label><input id="bRate" inputmode="decimal" placeholder="e.g. 2.59" value="${esc(rr)}"><span class="hint">${defRate?`Today's rate in the app: RM ${esc(String(defRate))}. Change it to what you actually got (e.g. your Wise/BigPay rate).`:"Check Google or Wise, e.g. 2.59 means ¥100 = RM 2.59."}</span></div>
-      <div class="card" style="padding:10px 12px"><div class="small muted">That's about</div><div class="num" style="font-size:20px;font-weight:700" id="bConv">—</div></div>
-    </div>
-    <div class="hint">Default ¥186,000 is the estimate for transport + activities + food per person. Shopping not included. Saved on this phone only.</div>
+    <div class="seg" role="group" id="bCur"><button type="button" data-v="MYR" aria-pressed="${cur==="MYR"}">Ringgit RM</button><button type="button" data-v="JPY" aria-pressed="${cur==="JPY"}">Yen ¥</button></div>
+    <div class="f" id="bMYR" ${cur==="JPY"?"hidden":""}><label for="bRM">Budget for the trip (RM)</label><input id="bRM" inputmode="decimal" placeholder="e.g. 5000" value="${esc(rv)}"></div>
+    <div class="f" id="bJPY" ${cur==="MYR"?"hidden":""}><label for="bVal">Budget for the trip (¥)</label><input id="bVal" inputmode="numeric" value="${esc(yv)}"></div>
+    <div class="small muted" id="bConv"></div>
+    <div class="hint">Count everything you want this budget to cover, e.g. your share of hotels and tickets too. It's tracked in the currency you pick: an RM budget goes down by your RM share of each expense. Saved on this phone only.</div>
     <button class="btn primary" id="bSave">Save</button>`,p=>{
     const num=id=>parseFloat(($(id,p).value||"").replace(/[^\d.]/g,""));
-    const conv=()=>{ const a=num("#bRM"), r=num("#bRate"); $("#bConv",p).textContent=(a>0&&r>0)?yen(Math.round(a/r*100)):"—"; };
+    const conv=()=>{ const r=tr&&tr.rate100; let t="";
+      if(r){ if(cur==="MYR"){ const a=num("#bRM"); if(a>0) t=`≈ ${yen(a/r*100)} at today's rate`; } else { const a=num("#bVal"); if(a>0) t=`≈ ${rm(a*r/100)} at today's rate`; } }
+      $("#bConv",p).textContent=t; };
     $("#bCur",p).addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return; cur=b.dataset.v;
       $("#bCur",p).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
       $("#bJPY",p).hidden=cur!=="JPY"; $("#bMYR",p).hidden=cur!=="MYR"; conv(); });
-    $("#bRM",p).addEventListener("input",conv); $("#bRate",p).addEventListener("input",conv); conv();
+    $("#bRM",p).addEventListener("input",conv); $("#bVal",p).addEventListener("input",conv); conv();
     $("#bSave",p).onclick=()=>{
       if(cur==="JPY"){ const v=num("#bVal"); if(!(v>0)){toast("Enter an amount in yen");return} ls.set("budget_"+me.id,String(Math.round(v))); }
-      else { const a=num("#bRM"), r=num("#bRate"); if(!(a>0)){toast("Enter an amount in ringgit");return} if(!(r>0)){toast("Enter the rate");return}
-        ls.set("budget_"+me.id,String(Math.round(a/r*100))); ls.set("budgetRM_"+me.id,String(a)); ls.set("budgetRate_"+me.id,String(r)); }
+      else { const a=num("#bRM"); if(!(a>0)){toast("Enter an amount in ringgit");return} ls.set("budgetRM_"+me.id,String(Math.round(a*100)/100)); }
       ls.set("budgetCur_"+me.id,cur); closeSheet(); render(); toast("Budget saved on this phone"); };
   });
 }
@@ -1244,6 +1277,7 @@ document.addEventListener("click",async ev=>{
   const sf=t.closest("[data-shopf]"); if(sf){ const v=sf.dataset.shopf; let F=[...(S.shopFilter||[])];
     if(!v) F=[]; else F=F.includes(v)?F.filter(x=>x!==v):[...F,v];
     S.shopFilter=F; ls.set("shopFilter",JSON.stringify(F)); render(); return; }
+  const svb=t.closest("[data-spendview]"); if(svb){S.spendView=svb.dataset.spendview;ls.set("spendView",S.spendView);render();return}
   const ivr=t.closest("[data-invrole]"); if(ivr){S.invRole=ivr.dataset.invrole;ls.set("invRole",S.invRole);render();return}
   const th=t.closest("[data-theme-set]"); if(th){ls.set("theme",th.dataset.themeSet);applyTheme();render();return}
   const fxb=t.closest("[data-fx]"); if(fxb){ls.set("fx",fxb.dataset.fx);fxStart();render();return}
@@ -1318,7 +1352,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
 (function boot(){
   const h=(location.hash||"").slice(1);
   S.tab=["plan","spend","todo","notes","trip"].includes(h)?h:ls.get("tab","plan");
-  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); try{ S.shopFilter=JSON.parse(ls.get("shopFilter","[]"))||[]; }catch(e){ S.shopFilter=[]; }
+  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); S.spendView=ls.get("spendView","mine"); try{ S.shopFilter=JSON.parse(ls.get("shopFilter","[]"))||[]; }catch(e){ S.shopFilter=[]; }
   render(); setRole();
   const inv=new URLSearchParams(location.search).get("invite"); if(inv) S.invite=inv;
   if(!CONFIGURED){ render(); return; }
@@ -1342,9 +1376,14 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
       if((S.member||{}).personId) wq("me",[where("vis","array-contains",S.member.personId)]); } sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v); sub("claims",null,v=>{S.claims=v; if(S.isOwner) backfillClaims();});
     if(S.isOwner) unsubs.push(S.db.collection("audit").orderBy("at","desc").limit(60).onSnapshot(snap=>{ S.audit=snap.docs.map(d=>({id:d.id,...d.data()})); render(); },()=>{}));
     if(S.isOwner) sub("invites","at",v=>S.invites=v,"desc");
-    setTimeout(()=>{S.ready=true; render();},400);
+    setTimeout(()=>{S.ready=true; render(); setTimeout(()=>{ if(S.canWrite&&!S.rates[todayJST()]) autoRate(); },1500); },400);
   };
-  fetchLiveRate().then(lr=>{ if(lr){ S.liveRate={rate100:lr.rate100,source:lr.source,date:lr.date}; render(); } });
+  const autoRate=async()=>{ const lr=await fetchLiveRate(); if(!lr) return; S.liveRate={rate100:lr.rate100,source:lr.source,date:lr.date}; render();
+    // Planners/Owner save it as today's rate once a day, so spending and budgets use it without anyone tapping a button
+    const t=todayJST(); if(S.canWrite&&S.ready&&!S.rates[t]&&ls.get("autoRate","")!==t){ ls.set("autoRate",t);
+      try{ await setDoc(doc(fs,"rates/"+t),{rate100:Math.round(lr.rate100*10000)/10000,source:"Auto: mid-market rate (same basis as Wise, before fees) · "+lr.source,auto:true,setAt:Date.now()}); }catch(e){} } };
+  autoRate(); document.addEventListener("visibilitychange",()=>{ if(!document.hidden) autoRate(); });
+  setInterval(()=>{ if(S.ready&&!S.rates[todayJST()]) autoRate(); },60*60*1000);
   onAuthStateChanged(auth, async u=>{
     stopAll(); dataStarted=false; S.authChecked=true; S.authUser=u||null; S.myId=u?u.uid:null;
     S.ownerUid=undefined; S.member=undefined; render();
