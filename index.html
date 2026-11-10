@@ -422,6 +422,14 @@ function balances(){
   while(i<debt.length&&j<cred.length){ const m=Math.min(debt[i][1],cred[j][1]); moves.push([debt[i][0],cred[j][0],m]); debt[i][1]-=m; cred[j][1]-=m; if(debt[i][1]<0.005)i++; if(cred[j][1]<0.005)j++; }
   return {net,moves};
 }
+function myDebts(){ // exact pairwise, from expenses I'm in (all of which I can see)
+  const me=myPerson(); if(!me) return []; const pair={};
+  for(const e of S.expenses){ const v=basis(e); if(v==null||!e.paidBy) continue;
+    const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id)); const sh=v/split.length;
+    if(e.paidBy===me.id) split.forEach(id=>{ if(id!==me.id) pair[id]=(pair[id]||0)+sh; });
+    else if(split.includes(me.id)) pair[e.paidBy]=(pair[e.paidBy]||0)-sh; }
+  return Object.entries(pair).filter(([,v])=>Math.abs(v)>0.005).sort((a,b)=>b[1]-a[1]);
+}
 const pname = id => (S.people.find(p=>p.id===id)||{}).name||"Someone";
 
 /* ---------- render ---------- */
@@ -690,7 +698,7 @@ function viewSpend(){
     <div class="hint">${tr?`At RM ${Number(tr.rate100).toFixed(3)} per ¥100 (${esc(fmtDate(tr.date))}). Your bank will add a little on top.`:"Save a rate below first."}</div>
   </div>
   <div class="section">
-    <div class="row" style="align-items:flex-end"><div><div class="eyebrow">Total spent (everyone)</div><div class="big num">${yen(T.y)}</div>${T.myrN?`<div class="small muted">+ ${rm(T.myr)} paid in ringgit (${T.myrN} item${T.myrN>1?"s":""})</div>`:""}</div><div class="spacer"></div>${W()?`<button class="btn primary" data-act="addExp">+ Add</button>`:""}</div>
+    <div class="row" style="align-items:flex-end"><div><div class="eyebrow">${S.isOwner?"Total spent (everyone)":"Total spent (what you can see)"}</div><div class="big num">${yen(T.y)}</div>${T.myrN?`<div class="small muted">+ ${rm(T.myr)} paid in ringgit (${T.myrN} item${T.myrN>1?"s":""})</div>`:""}</div><div class="spacer"></div>${W()?`<button class="btn primary" data-act="addExp">+ Add</button>`:""}</div>
     <div class="card"><dl class="kv">
       <dt>At the rate you saved each day</dt><dd>${rm(T.estSum)}</dd>
       <dt>Actual (bank charged where filled in, rate for the rest)</dt><dd>${rm(T.actual)}</dd>
@@ -704,11 +712,14 @@ function viewSpend(){
   </div>
   <div class="section">
     <h3>Who owes who</h3>
-    ${S.people.length?`<div class="card"><dl class="kv">${S.people.map(p=>`<dt>${esc(p.name)}</dt><dd class="${net[p.id]>0.005?"pos":net[p.id]<-0.005?"neg":""}">${net[p.id]>0.005?"gets back ":net[p.id]<-0.005?"owes ":""}${rm(Math.abs(net[p.id]||0))}</dd>`).join("")}</dl>
+    ${S.people.length?(S.isOwner?`<div class="card"><dl class="kv">${S.people.map(p=>`<dt>${esc(p.name)}</dt><dd class="${net[p.id]>0.005?"pos":net[p.id]<-0.005?"neg":""}">${net[p.id]>0.005?"gets back ":net[p.id]<-0.005?"owes ":""}${rm(Math.abs(net[p.id]||0))}</dd>`).join("")}</dl>
       ${moves.length?`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px" class="small">${moves.map(([a,b,v])=>`<div class="row" style="justify-content:space-between"><span><strong>${esc(pname(a))}</strong> pays <strong>${esc(pname(b))}</strong></span><span class="num" style="font-weight:600">${rm(v)}</span></div>`).join("")}</div>`:`<div class="small muted" style="margin-top:10px">All square.</div>`}
+      <div class="hint" style="margin-top:8px">You see everyone's spending as the Owner, so this is the whole group, settled in the fewest transfers.</div>`
+      :(()=>{ const D=myDebts(); return `<div class="card">${myPerson()?(D.length?D.map(([id,v])=>`<div class="row" style="justify-content:space-between"><span>${v>0?`<strong>${esc(pname(id))}</strong> owes you`:`You owe <strong>${esc(pname(id))}</strong>`}</span><span class="num ${v>0?"pos":"neg"}" style="font-weight:600">${rm(Math.abs(v))}</span></div>`).join(""):`<div class="small muted">All square.</div>`):`<div class="small muted">Pick your name in the Trip tab to see what you owe.</div>`}
+      <div class="hint" style="margin-top:8px">Just your own debts, from the spending you're part of.</div>`})())+`
       <div class="hint" style="margin-top:8px">Uses the ringgit amount for things charged in RM, the bank amount when it's filled in, otherwise yen × the day's rate.</div></div>`:`<div class="empty">Add the people in the Trip tab to split costs.</div>`}
   </div>
-  ${Object.keys(cats).length?`<div class="section"><h3>By category</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${yen(v)}</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
+  ${Object.keys(cats).length?`<div class="section"><h3>By category${S.isOwner?"":" (what you can see)"}</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${yen(v)}</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
   <div class="section"><h3>All spending</h3>${list}</div>`;
 }
 
@@ -1090,6 +1101,7 @@ function expenseSheet(id,focusBank){
     <div class="f"><span class="lab">Split between</span><div class="pick" id="eSplit">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${e.split.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div></div>
     <div class="grid2" id="eFx"><div class="f"><label for="eRate">Rate (RM per ¥100)</label><input id="eRate" inputmode="decimal" value="${esc(e.rate100)}" placeholder="e.g. 2.95"><span class="hint" id="eRateHint"></span></div>
       <div class="f" id="eBankWrap"><label for="eBank">Bank charged (RM)</label><input id="eBank" inputmode="decimal" value="${esc(e.bank||"")}" placeholder="Fill in later"><span class="hint">From your bank app.</span></div></div>
+    <div class="hint">Only the people in the split, whoever paid and the Owner can see this.</div>
     <div class="card small" id="ePrev"></div>
     ${id?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="eDel">Delete</button></div>`:""}
     <button class="btn primary" id="eSave">${id?"Save":"Add spending"}</button>`,p=>{
@@ -1118,7 +1130,7 @@ function expenseSheet(id,focusBank){
       const cur=val("#eCur")[0]||"JPY"; const y=num($("#eYen",p).value); if(!y){toast(cur==="MYR"?"Enter the amount in ringgit":"Enter the amount in yen");return}
       const split=val("#eSplit"); if(!split.length){toast("Pick at least one person to split with");return}
       const date=$("#eDate",p).value||todayJST(); const r=num($("#eRate",p).value); const method=val("#eMeth")[0]||"card";
-      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,createdAt:e.createdAt||Date.now()};
+      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,createdAt:e.createdAt||Date.now(),by:e.by||S.myId};
       const doc=cur==="MYR"?{...base,cur:"MYR",rm:Math.round(y*100)/100,yen:null,rate100:null,bank:null}:{...base,cur:"JPY",yen:Math.round(y),rate100:r||null,bank:method==="card"?(num($("#eBank",p).value)||null):null};
       const ok=await write(async()=>{
         if(id) await S.db.doc("expenses/"+id).set(doc); else await S.db.collection("expenses").add(doc);
@@ -1317,7 +1329,11 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
   let dataStarted=false;
   const startData=()=>{ if(dataStarted) return; dataStarted=true;
     sub("days","order",v=>S.days=v); sub("notes","order",v=>S.notes=v); sub("tasks","order",v=>S.tasks=v);
-    sub("people","order",v=>S.people=v); sub("expenses",null,v=>S.expenses=v);
+    sub("people","order",v=>S.people=v); if(S.isOwner) sub("expenses",null,v=>S.expenses=v);
+    else { const xp={}; const xm=()=>{ const m=new Map(); Object.values(xp).forEach(a=>a.forEach(x=>m.set(x.id,x))); S.expenses=[...m.values()]; render(); };
+      const xq=(k,cons)=>unsubs.push(onSnapshot(query(collection(fs,"expenses"),...cons),sn=>{ xp[k]=sn.docs.map(d=>({id:d.id,...d.data()})); xm(); },e=>console.warn("expenses",k,e)));
+      xq("by",[where("by","==",S.myId)]); const pid=(S.member||{}).personId;
+      if(pid){ xq("split",[where("split","array-contains",pid)]); xq("paid",[where("paidBy","==",pid)]); } }
     sub("rates",null,v=>{S.rates={}; v.forEach(r=>S.rates[r.id]=r)}); sub("meta",null,v=>{S.meta=v.find(x=>x.id==="trip")||{}});
     if(S.isOwner) sub("wallet","at",v=>{ S.wallet=v; const old=v.filter(w=>!w.vis); if(old.length){ const b=writeBatch(fs); old.forEach(w=>b.update(doc(fs,"wallet/"+w.id),{vis:["all"]})); b.commit().catch(()=>{}); } });
     else { const parts={}; const merge=()=>{ const m=new Map(); Object.values(parts).forEach(a=>a.forEach(w=>m.set(w.id,w))); S.wallet=[...m.values()].sort((a,b)=>(a.at||0)-(b.at||0)); render(); };

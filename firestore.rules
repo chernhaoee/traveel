@@ -69,6 +69,15 @@ service cloud.firestore {
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vis']);
     }
 
+    // Spending: only the people in the split, whoever paid, whoever added it, and the Owner.
+    match /expenses/{id} {
+      allow read: if canRead() && (isAdmin() || resource.data.get('by', '') == request.auth.uid
+                    || resource.data.paidBy == myPid() || myPid() in resource.data.split);
+      allow create: if isPlanner() && request.resource.data.by == request.auth.uid;
+      allow update, delete: if isPlanner() && (isAdmin() || resource.data.get('by', '') == request.auth.uid
+                    || resource.data.paidBy == myPid() || myPid() in resource.data.split);
+    }
+
     // Tickets & bookings: everyone, or only the people picked. The Owner and the uploader always see it.
     match /wallet/{id} {
       allow read: if canRead() && (isAdmin() || resource.data.by == request.auth.uid || seesVis(resource.data));
@@ -96,9 +105,9 @@ service cloud.firestore {
 
     // Trip data.
     match /{col}/{id} {
-      allow read: if canRead() && col in ['days','notes','tasks','people','expenses','rates','meta','shopping'];
-      allow create, update: if isPlanner() && col in ['days','notes','tasks','people','expenses','rates','meta','shopping'];
-      allow delete: if col in ['days','notes','tasks','expenses','rates','meta','shopping'] && isPlanner()
+      allow read: if canRead() && col in ['days','notes','tasks','people','rates','meta','shopping'];
+      allow create, update: if isPlanner() && col in ['days','notes','tasks','people','rates','meta','shopping'];
+      allow delete: if col in ['days','notes','tasks','rates','meta','shopping'] && isPlanner()
                     || col == 'people' && isAdmin();
     }
   }
