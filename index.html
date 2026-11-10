@@ -511,6 +511,51 @@ function pickJSON(){
     i.click();
   });
 }
+/* ---------- export / import (Owner) ---------- */
+const XCOLS=["meta","days","notes","tasks","people","shopping","expenses","rates"];
+const stable=v=>JSON.stringify(v,(k,x)=>x&&typeof x==="object"&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,kk)=>(o[kk]=x[kk],o),{}):x);
+async function readAll(cols){ const out={}; for(const c of cols){ const sn=await getDocs(collection(fs,c)); out[c]={}; sn.docs.forEach(d=>out[c][d.id]=d.data()); } return out; }
+async function exportTrip(){
+  try{
+    const data=await readAll(XCOLS);
+    const out={_traveel:{version:1,exportedAt:Date.now(),trip:(S.meta||{}).name||"Trip",note:"Edit freely. Keep each item's id the same to update it; add new ids to add items."},...data};
+    const blob=new Blob([JSON.stringify(out,null,1)],{type:"application/json"});
+    const d=new Date(), stamp=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
+    const file=new File([blob],`traveel-export-${stamp}.json`,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){ try{ await navigator.share({files:[file],title:"Traveel export"}); }catch(e){ if(e.name!=="AbortError") throw e; } }
+    else { const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+    write(async()=>{},null,["Exported the trip",Object.values(data).reduce((n,c)=>n+Object.keys(c).length,0)+" items"]);
+    toast("Exported");
+  }catch(e){ toast("Couldn't export: "+(e.code||e.message||"try again")); }
+}
+async function importUpdate(){
+  let file; try{ file=await pickJSON(); }catch(e){ toast("Pick an exported .json file"); return; }
+  let cur; try{ cur=await readAll(XCOLS); }catch(e){ toast("Couldn't read the trip: "+(e.code||e.message)); return; }
+  const nested=v=>Array.isArray(v)?v.some(x=>Array.isArray(x)||nested(x)):(v&&typeof v==="object"?Object.values(v).some(nested):false);
+  const bad=XCOLS.filter(c=>file[c]&&nested(file[c])); if(bad.length){ toast("The file has a list inside a list in: "+bad.join(", ")+". Firestore can't store that"); return; }
+  const add=[],chg=[],del=[];
+  for(const c of XCOLS){ const f=file[c]; if(!f||typeof f!=="object") continue;
+    for(const [id,body] of Object.entries(f)){ if(!body||typeof body!=="object"||Array.isArray(body)) continue; if(!cur[c][id]) add.push([c,id,body]); else if(stable(cur[c][id])!==stable(body)) chg.push([c,id,body]); }
+    for(const id of Object.keys(cur[c])) if(!(id in f)) del.push([c,id]); }
+  const at=(file._traveel||{}).exportedAt||0;
+  const since=at?S.audit.filter(x=>x.at>at&&x.a!=="Exported the trip"):[];
+  const label=([c,id,b])=>{ const x=b||cur[c][id]||{}; return `${c}: ${x.title||x.name||x.text||x.city||x.date||id}`; };
+  const list=a=>a.slice(0,8).map(x=>`<li>${esc(label(x))}</li>`).join("")+(a.length>8?`<li class="muted">…and ${a.length-8} more</li>`:"");
+  if(!add.length&&!chg.length&&!del.length){ toast("Nothing to change. The file matches the trip"); return; }
+  openSheet("Import changes",`
+    ${since.length?`<div class="hint" style="color:var(--neg,#c0392b)">⚠️ ${since.length} change${since.length>1?"s were":" was"} made in the app after this file was exported (latest: ${esc((since[0].who||"someone")+" "+(since[0].a||"").toLowerCase())}). Importing may overwrite those. Export again first if unsure.</div>`:""}
+    <div class="small"><strong>${add.length}</strong> new · <strong>${chg.length}</strong> updated · <strong>${del.length}</strong> not in the file</div>
+    ${add.length?`<div class="lab">New</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(add)}</ul>`:""}
+    ${chg.length?`<div class="lab">Updated</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(chg)}</ul>`:""}
+    ${del.length?`<label class="row small" style="gap:8px"><input type="checkbox" id="impDel"> Also remove ${del.length>1?`the ${del.length} items that aren't`:"the 1 item that isn't"} in the file</label><ul class="small muted" style="margin:4px 0 8px;padding-left:18px">${list(del)}</ul>`:""}
+    <button class="btn primary" id="impGo">Apply changes</button>`,p=>{
+    $("#impGo",p).onclick=async()=>{ const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
+      const ops=[...add.map(x=>["set",...x]),...chg.map(x=>["set",...x]),...rm.map(x=>["del",...x])];
+      const ok=await write(async()=>{ for(let i=0;i<ops.length;i+=400){ const b=writeBatch(fs); ops.slice(i,i+400).forEach(([k,c,id,body])=>k==="set"?b.set(doc(fs,c+"/"+id),body):b.delete(doc(fs,c+"/"+id))); await b.commit(); } },
+        "Changes imported",["Imported changes",`${add.length} new, ${chg.length} updated${rm.length?`, ${rm.length} removed`:""}`]);
+      if(ok) closeSheet(); };
+  });
+}
 async function importData(){
   let data; try{ data=await pickJSON(); }catch(e){ toast("Pick the trip-data .json file"); return; }
   S.importing=true; render();
@@ -753,6 +798,10 @@ function viewTrip(){
     <div class="row"><h3>Tickets & bookings</h3><div class="spacer"></div>${S.canWrite?`<button class="btn small" data-act="addWallet">+ Upload</button>`:""}</div>
     ${S.wallet.length?`<div class="list">${S.wallet.map(w=>`<button class="li tap" data-wallet="${esc(w.id)}"><div class="main"><div class="ti">🎫 ${esc(w.title)}</div><div class="sub">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${isImg(w)?"Image":"PDF"}${visAll(w)?"":` · ${esc(visLabel(w))}`}</div></div></button>`).join("")}</div>`:`<div class="muted small">${S.canWrite?"Upload screenshots of shinkansen QR codes, bus tickets, hotel confirmations, Disney tickets. They also show on the right day in the Plan.":"Nothing uploaded yet."}</div>`}
   </div>
+  ${S.isOwner?`<div class="card section"><h3>Export & import</h3>
+    <div class="small">Download everything in the trip as one file (plan, notes, to-dos, shopping, people, spending). Edit it or send it to Claude, then import it back here.</div>
+    <div class="row"><button class="btn small" data-act="exportTrip">Export trip</button><button class="btn small plain" data-act="importUpdate">Import changes</button></div>
+    <div class="hint">Importing shows you what will change before anything is saved. Tickets, members and invites aren't touched.</div></div>`:""}
   ${S.isOwner?`<div class="card section"><div class="row"><h3>Activity</h3><div class="spacer"></div><span class="small muted">${S.audit.length?`Latest ${S.audit.length}`:""}</span></div>${S.audit.length?`<div class="audit">${S.audit.map(x=>`<div class="arow"><div class="atext"><strong>${esc(x.who||(S.members.find(m=>m.id===x.uid)?mname(S.members.find(m=>m.id===x.uid)):"")||"Someone")}</strong> ${esc((x.a||"").toLowerCase())}${x.t?` <span class="muted">· ${esc(x.t)}</span>`:""}</div><div class="atime">${esc(ago(x.at))}</div></div>`).join("")}</div>`:`<div class="muted small">Changes people make will show here.</div>`}<div class="hint">Only you (the Owner) see this. Nobody can edit or delete entries.</div></div>`:""}
   <div class="card section">
     <h3>Appearance</h3>
@@ -1212,6 +1261,8 @@ document.addEventListener("click",async ev=>{
     case "importData": importData(); break;
     case "joinTrip": joinTrip(); break;
     case "newInvite": newInvite(a.dataset.role); break;
+    case "exportTrip": exportTrip(); break;
+    case "importUpdate": importUpdate(); break;
     case "shareInvite": shareInvite(a.dataset.link,a.dataset.role,a); break;
     case "copyInvite": { const v=a.dataset.link; try{await navigator.clipboard.writeText(v);toast("Invite link copied")}catch(e){toast("Copy the link from the box")} break; }
     case "resetInvite": { const r=a.dataset.role; const old=S.invites.filter(x=>x.role===r);
