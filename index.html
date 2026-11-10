@@ -314,7 +314,7 @@ function fxResize(){ const c=$("#fx"); if(!c) return; FX.dpr=Math.min(2,window.d
 function fxNew(top){
   const k=FX.kind, r=Math.random, S2=fxSprites(), pick=a=>a[Math.floor(r()*a.length)];
   const base={x:r()*FX.w,y:top?-40-r()*FX.h*.2:r()*FX.h,rot:r()*6.28,vr:(r()-.5)*.03,ph:r()*6.28,sw:.4+r()*1.2,flip:r()*6.28,vf:.02+r()*.04};
-  if(k==="snow") return {...base,s:1.5+r()*3.2,vy:.35+r()*.8,vx:(r()-.5)*.3};
+  if(k==="snow"){ const flake=r()<.45; return {...base,flake,s:flake?6+r()*6:1.5+r()*3,vy:flake?.3+r()*.45:.35+r()*.8,vx:(r()-.5)*.3,vr:flake?(r()-.5)*.012:0}; }
   if(k==="rain") return {...base,s:10+r()*12,vy:7+r()*5,vx:-.8-r()*.6,sw:0,vr:0};
   if(k==="daruma") return {...base,img:r()<.8?S2.daruma[0]:S2.daruma[1],s:36+r()*12,vy:.45+r()*.5,vx:(r()-.5)*.2,vr:(r()-.5)*.02,vf:0};
   if(k==="leaves") return {...base,img:pick(S2.maples),s:28+r()*12,vy:.55+r()*.8,vx:(r()-.5)*.4};
@@ -402,7 +402,11 @@ function fxFrame(t){
     p.ph+=.02*dt; p.y+=p.vy*dt; p.x+=(p.vx+Math.sin(p.ph)*p.sw*.35)*dt; p.rot+=p.vr*dt;
     if(p.y>FX.h+30||p.x>FX.w+40||p.x<-40) Object.assign(p,fxNew(true));
     g.save(); g.translate(p.x,p.y);
-    if(FX.kind==="snow"){ g.fillStyle=dark?"#ffffff":"#9fb4c8"; g.globalAlpha=dark?.55:.45; g.beginPath(); g.arc(0,0,p.s,0,6.28); g.fill(); }
+    if(FX.kind==="snow"){ const col=dark?"#ffffff":"#8fa8c0"; g.globalAlpha=dark?.6:.55;
+      if(p.flake){ g.rotate(p.rot); g.strokeStyle=col; g.lineWidth=Math.max(1,p.s/8); g.lineCap="round"; const a=p.s, b=p.s*.55, c=p.s*.3; g.beginPath();
+        for(let i=0;i<6;i++){ g.moveTo(0,0); g.lineTo(0,-a); g.moveTo(0,-b); g.lineTo(-c,-b-c); g.moveTo(0,-b); g.lineTo(c,-b-c); g.rotate(Math.PI/3); }
+        g.stroke(); }
+      else { g.fillStyle=col; g.beginPath(); g.arc(0,0,p.s,0,6.28); g.fill(); } }
     else if(FX.kind==="rain"){ g.strokeStyle=dark?"#cfe0ff":"#6f8fb0"; g.globalAlpha=dark?.35:.4; g.lineWidth=1.2; g.lineCap="round"; g.beginPath(); g.moveTo(0,0); g.lineTo(p.vx*2.2,p.s); g.stroke(); }
     else { p.flip+=p.vf*dt; g.rotate(p.rot); if(p.vf) g.scale(.35+.65*Math.abs(Math.cos(p.flip)),1); g.drawImage(p.img,-p.s/2,-p.s/2,p.s,p.s); }
     g.restore();
