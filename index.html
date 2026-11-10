@@ -811,7 +811,7 @@ function viewPlan(){
       return `<div class="wxline"><span class="wxbig">${w.icon}</span><span><strong>${esc(w.label)}</strong> · ${Math.round(w.hi)}° / ${Math.round(w.lo)}° · rain ${w.rain??"–"}%${w.wind>=30?" · windy":""} <span class="small muted">${esc(city)}</span></span></div>
         ${(w.rain>=60||w.kind==="rain"||w.kind==="storm")?`<div class="hint" style="margin:6px 0 0">☔ Rain likely, so bring an umbrella.${out.length?` Outdoor today: ${esc(out.slice(0,4).join(", "))}${out.length>4?"…":""}. Consider swapping with a drier day.`:""}</div>`:""}
         ${w.kind==="snow"?`<div class="hint" style="margin:6px 0 0">🌨 Snow possible: grippy shoes, and check trains and buses before heading out.</div>`:""}`; })()}
-    <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${W()?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
+    <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${S.isOwner?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
   </div>
   ${(ad||tix.length)?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
@@ -1212,13 +1212,13 @@ function addDaySheet(){
       <div class="f"><label for="nCity">City</label><input id="nCity" value="${esc(last.city?String(last.city).split("→").pop().trim():"")}" placeholder="e.g. Tokyo"></div></div>
     <div class="f"><label for="nTitle">Day title</label><input id="nTitle" placeholder="e.g. Free day in Tokyo"></div>
     <div class="f"><label for="nHotel">Stay</label><input id="nHotel" value="${esc(last.hotel||"")}"></div>
-    <div class="f"><span class="lab">Who can see it</span>${dayVisPicker(new Set())}</div>
+    ${S.isOwner?`<div class="f"><span class="lab">Who can see it</span>${dayVisPicker(new Set())}</div>`:""}
     <div class="hint">Add a day before, after or in the middle of the trip. It slots into date order automatically. Then add stops to it.</div>
-    <button class="btn primary" id="nSave">Add day</button>`,p=>{ dayVisWire(p);
+    <button class="btn primary" id="nSave">Add day</button>`,p=>{ if(S.isOwner) dayVisWire(p);
     $("#nSave",p).onclick=async()=>{
       const date=$("#nDate",p).value; if(!date){toast("Pick a date");return}
       if(S.days.some(d=>d.date===date||d.id===date)){toast("That date is already in the trip");return}
-      const v={date,city:$("#nCity",p).value.trim(),title:$("#nTitle",p).value.trim()||"Free day",hotel:$("#nHotel",p).value.trim(),items:[],notes:[],order:0,visibleTo:dayVisRead(p)};
+      const v={date,city:$("#nCity",p).value.trim(),title:$("#nTitle",p).value.trim()||"Free day",hotel:$("#nHotel",p).value.trim(),items:[],notes:[],order:0,visibleTo:S.isOwner?dayVisRead(p):[]};
       if(await write(()=>renumberDays([[date,v]]),"Day added",["Added a day",fmtDate(date)+": "+v.title])){ S.dayId=date; ls.set("day",date); closeSheet(); render(); }
     };
   });
