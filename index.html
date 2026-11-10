@@ -47,6 +47,22 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .brand p{margin:0;font-size:12.5px;color:var(--muted)}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--fg);background:transparent;white-space:nowrap}
 .chip.soft{border-color:var(--line);color:var(--muted)}
+.mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
+.mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
+.mvp .sub{color:#c9bde0;font-size:13px}
+.mvp .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.mvp .aw{background:rgba(255,255,255,.06);border:1px solid rgba(243,201,105,.25);border-radius:14px;padding:12px 10px;text-align:center;opacity:0;transform:translateY(8px);animation:awIn .5s ease forwards}
+.mvp .aw .em{font-size:30px;line-height:1.1}
+.mvp .aw .t{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#f3c969;margin-top:6px}
+.mvp .aw .n{font-size:17px;font-weight:800;margin-top:4px;color:#fff}
+.mvp .aw .l{font-size:12px;color:#c9bde0;margin-top:2px}
+.mvp .aw.top{grid-column:1/-1;background:linear-gradient(135deg,rgba(243,201,105,.22),rgba(243,201,105,.06));border-color:rgba(243,201,105,.6)}
+.mvp .aw.wide{grid-column:1/-1}
+.mvp .aw.top .em{font-size:40px}.mvp .aw.top .n{font-size:22px}
+.mvp .btn{border-color:#f3c969;color:#f3c969;background:transparent}
+.mvp .btn.primary{background:#f3c969;color:#1b1530}
+@keyframes awIn{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.mvp .aw{animation:none;opacity:1;transform:none}}
 #fx{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
 main{position:relative;z-index:1;padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 main .wrap{padding-block:16px;display:flex;flex-direction:column;gap:18px}
@@ -396,6 +412,12 @@ function est(e){ if(isRM(e)) return e.rm||0; return e.rate100? e.yen*e.rate100/1
 function yenEq(e){ if(!isRM(e)) return e.yen||0; const r=e.rate100||(rateFor(e.date)||{}).rate100; return r?(e.rm||0)/r*100:0; }
 const yenKnown = e => !isRM(e) || !!(e.rate100||(rateFor(e.date)||{}).rate100);
 const amtLabel = e => isRM(e)?rm(e.rm||0):yen(e.yen||0);
+const splitOf = e => (e.split&&e.split.length?e.split:S.people.map(p=>p.id));
+function rmOf(e){ let b=basis(e); if(b==null){ const r=(rateFor(e.date)||{}).rate100; if(r) b=(e.yen||0)*r/100; } return b; }
+// What this expense costs one person. A treat is all on whoever paid; everyone else pays nothing.
+function shareFor(e,pid){ const n=splitOf(e).length||1;
+  if(e.treat) return e.paidBy===pid?{f:1,n}:{f:0,n};
+  return splitOf(e).includes(pid)?{f:1/n,n}:{f:0,n}; }
 function basis(e){ if(isRM(e)) return e.rm||0; if(e.method==="card"&&e.bank>0) return e.bank; return est(e) }
 function totals(){
   let y=0,myr=0,myrN=0,estSum=0,missing=0,bank=0,bankEst=0,bankN=0,cardN=0,actual=0;
@@ -410,7 +432,7 @@ function totals(){
 function balances(){
   const net={}; S.people.forEach(p=>net[p.id]=0);
   for(const e of S.expenses){
-    const v=basis(e); if(v==null||!e.paidBy) continue;
+    const v=basis(e); if(v==null||!e.paidBy||e.treat) continue;
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id)).filter(id=>id in net);
     if(!split.length) continue;
     if(e.paidBy in net) net[e.paidBy]+=v;
@@ -425,7 +447,7 @@ function balances(){
 }
 function myDebts(){ // exact pairwise, from expenses I'm in (all of which I can see)
   const me=myPerson(); if(!me) return []; const pair={};
-  for(const e of S.expenses){ const v=basis(e); if(v==null||!e.paidBy) continue;
+  for(const e of S.expenses){ const v=basis(e); if(v==null||!e.paidBy||e.treat) continue;
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id)); const sh=v/split.length;
     if(e.paidBy===me.id) split.forEach(id=>{ if(id!==me.id) pair[id]=(pair[id]||0)+sh; });
     else if(split.includes(me.id)) pair[e.paidBy]=(pair[e.paidBy]||0)-sh; }
@@ -612,6 +634,49 @@ function memberSheet(uid){
     if($("#mDel",p)) twoStep($("#mDel",p),"Tap again to remove",async()=>{ if(await write(()=>S.db.doc("members/"+uid).delete(),"Removed",["Removed member",mname(m)])) closeSheet(); });
   });
 }
+/* ---------- Trip MVPs ---------- */
+const TRIP_END="2027-01-04";
+async function computeAwards(){
+  let audit=[]; try{ const sn=await getDocs(collection(fs,"audit")); audit=sn.docs.map(d=>d.data()); }catch(e){ audit=S.audit||[]; }
+  const pidOf=uid=>(S.members.find(m=>m.id===uid)||{}).personId;
+  const P=S.people.map(p=>p.id); const st={}; P.forEach(id=>st[id]={spend:0,treatOut:0,treatIn:0,food:0,shop:0,front:0,logged:0,plan:0,acts:0,tix:0,cash:0});
+  for(const e of S.expenses){ const b=rmOf(e); if(b==null) continue; const sp=splitOf(e), n=sp.length||1;
+    P.forEach(id=>{ const {f}=shareFor(e,id); if(!f) return; st[id].spend+=b*f; if(e.cat==="Food") st[id].food+=b*f; if(e.cat==="Shopping") st[id].shop+=b*f; });
+    if(e.paidBy in st){ st[e.paidBy].front+=b; if(e.method==="cash"&&!isRM(e)) st[e.paidBy].cash++; }
+    if(e.treat&&e.paidBy in st){ sp.forEach(id=>{ if(id!==e.paidBy&&id in st){ st[e.paidBy].treatOut+=b/n; st[id].treatIn+=b/n; } }); }
+    const ap=pidOf(e.by); if(ap in st) st[ap].logged++; }
+  for(const a of audit){ const id=pidOf(a.uid); if(!(id in st)) continue; st[id].acts++;
+    if(/stop|day|note|to-do|task|import/i.test(a.a||"")) st[id].plan++; }
+  for(const w of S.wallet){ const id=pidOf(w.by); if(id in st) st[id].tix++; }
+  const linked=P.filter(id=>S.members.some(m=>m.personId===id));
+  const won={}; const CAP=2; // spread the love: once someone has 2 awards, the next one they'd win is skipped
+  const best=(k,min)=>{ const ok=P.filter(id=>st[id][k]>(min||0)).sort((a,b)=>st[b][k]-st[a][k]); return ok[0]&&(won[ok[0]]||0)<CAP?ok[0]:null; }; // the real winner or nobody, so the numbers never lie
+  const list=[]; const add=(key,emoji,title,pid,line)=>{ if(pid){ list.push({key,emoji,title,pid,line}); won[pid]=(won[pid]||0)+1; } };
+  add("spender","💸","The Top Spender",best("spend"),pid=>`spent ${rm(st[pid].spend)}`);
+  add("heart","🎁","The Big Heart",best("treatOut",0.5),pid=>`treated everyone to ${rm(st[pid].treatOut)}`);
+  add("bank","🏦","The Group Bank",best("front",0.5),pid=>`fronted ${rm(st[pid].front)} for the group`);
+  add("foodie","🍜","The Foodie",best("food",0.5),pid=>`ate through ${rm(st[pid].food)}`);
+  add("shop","🛍️","The Shopaholic",best("shop",0.5),pid=>`shopped ${rm(st[pid].shop)}`);
+  add("planner","🗺️","The Full Planner",best("plan"),pid=>`${st[pid].plan} changes to the plan`);
+  add("accountant","🧾","The Accountant",best("logged"),pid=>`logged ${st[pid].logged} expenses`);
+  add("tix","🎟️","The Ticket Master",best("tix"),pid=>`uploaded ${st[pid].tix} tickets`);
+  add("cash","💴","The Cash King",best("cash",1),pid=>`paid cash ${st[pid].cash} times`);
+  add("sponsored","🍼","The Sponsored",best("treatIn",0.5),pid=>`got treated to ${rm(st[pid].treatIn)}`);
+  if(linked.length>1){ const maxActs=Math.max(...linked.map(id=>st[id].acts)); if(maxActs>0){ const afk=[...linked].sort((a,b)=>st[a].acts-st[b].acts||(won[a]||0)-(won[b]||0))[0];
+    add("afk","💤","The AFK",afk,pid=>st[pid].acts?`only ${st[pid].acts} change${st[pid].acts>1?"s":""} the whole trip`:"didn't touch the app once"); } }
+  const spenders=P.filter(id=>st[id].spend>0); if(spenders.length>1){ const low=[...spenders].sort((a,b)=>st[a].spend-st[b].spend).find(id=>(won[id]||0)<CAP);
+    add("saver","🪙","The Budget King",low,pid=>`spent only ${rm(st[pid].spend)}`); }
+  return list.map(x=>({key:x.key,emoji:x.emoji,title:x.title,pid:x.pid,line:x.line(x.pid)}));
+}
+function mvpCard(A,opts){ opts=opts||{};
+  const L=(A&&A.list)||[]; if(!L.length) return `<div class="mvp"><h3>TRIP MVPs</h3><div class="sub">Not enough happened in the app yet to hand out awards.</div></div>`;
+  return `<div class="mvp"><h3>🏆 TRIP MVPs</h3><div class="sub">${esc((S.meta||{}).name||"The trip")} · the official awards</div>
+    <div class="grid">${L.map((a,i)=>`<div class="aw${i===0?" top":""}${i>0&&i===L.length-1&&(L.length-1)%2===1?" wide":""}" style="animation-delay:${(i*0.12).toFixed(2)}s"><div class="em">${a.emoji}</div><div class="t">${esc(a.title)}</div><div class="n">${esc(pname(a.pid))}</div><div class="l">${esc(a.line)}</div></div>`).join("")}</div>
+    ${opts.owner?`<div class="row" style="margin-top:12px"><div class="spacer"></div><button class="btn small" data-act="mvpHide">Hide</button></div>`:""}</div>`;
+}
+async function mvpPreview(){ const list=await computeAwards(); S.mvpDraft={list};
+  openSheet("Trip MVPs (only you can see this)",`${mvpCard({list})}<div class="hint">Worked out from spending, tickets and the activity log. Reveal it and everyone sees it at the top of the Plan tab.</div><button class="btn primary" id="mvpGo">Reveal to everyone 🏆</button>`,p=>{
+    $("#mvpGo",p).onclick=async()=>{ if(await write(()=>setDoc(doc(fs,"meta/awards"),{list,revealedAt:Date.now(),by:S.myId}),"MVPs revealed 🏆",["Revealed the trip MVPs",list.length+" awards"])){ closeSheet(); S.tab="plan"; render(); window.scrollTo(0,0); } }; }); }
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
   if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
@@ -631,7 +696,8 @@ function viewPlan(){
     </div>`).join(""):`<div class="empty">Nothing planned for this day yet.</div>`;
   const notes=(d.notes||[]).filter(Boolean);
   const tr=transportFor(d); const ad=addressFor(d.hotel); const tix=S.wallet.filter(w=>w.day===d.date);
-  return `
+  const mvp=S.awards&&S.awards.revealedAt?mvpCard(S.awards,{owner:S.isOwner}):(S.isOwner&&todayJST()>=TRIP_END?`<div class="mvp"><h3>🏆 TRIP'S OVER</h3><div class="sub">Time to hand out the awards: Top Spender, The AFK and more.</div><div class="row" style="margin-top:12px"><button class="btn primary small" data-act="mvpPreview">See the MVPs</button></div></div>`:"");
+  return `${mvp}
   <div class="days" role="group" aria-label="Days">${strip}</div>
   <div class="dayhead">
     <div class="eyebrow">Day ${idx+1} of ${S.days.length} · ${esc(fmtDate(d.date,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>
@@ -649,8 +715,8 @@ function myBudget(){
   const me=myPerson(); if(!me) return null;
   let yenShare=0,rmShare=0,paid=0,paidRM=0;
   for(const e of S.expenses){
-    const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id));
-    if(split.includes(me.id)){ yenShare+=yenEq(e)/split.length; let b=basis(e); if(b==null){ const r=(rateFor(e.date)||{}).rate100; if(r) b=(e.yen||0)*r/100; } if(b!=null) rmShare+=b/split.length; }
+    const {f}=shareFor(e,me.id);
+    if(f){ yenShare+=yenEq(e)*f; const b=rmOf(e); if(b!=null) rmShare+=b*f; }
     if(e.paidBy===me.id){ paid+=yenEq(e); const b=basis(e); if(b!=null) paidRM+=b; }
   }
   let cur=ls.get("budgetCur_"+me.id,"JPY"); const bRM=Number(ls.get("budgetRM_"+me.id,""))||0, bRate=0;
@@ -663,10 +729,16 @@ function myBudget(){
 }
 function viewMine(){
   const me=myPerson(); if(!me) return "";
-  const mineE=S.expenses.filter(e=>(e.split&&e.split.length?e.split:S.people.map(p=>p.id)).includes(me.id));
-  const share=e=>{ const n=(e.split&&e.split.length?e.split.length:S.people.length)||1; const b=basis(e); return {rm:b==null?null:b/n, y:yenEq(e)/n, n}; };
-  let tot=0,totY=0,noRate=0; const cats={};
-  mineE.forEach(e=>{ const x=share(e); totY+=x.y; if(x.rm==null) noRate++; else { tot+=x.rm; cats[e.cat||"Other"]=(cats[e.cat||"Other"]||0)+x.rm; } });
+  const mineE=S.expenses.filter(e=>splitOf(e).includes(me.id)||(e.treat&&e.paidBy===me.id));
+  const meta=e=>{ const {f,n}=shareFor(e,me.id); const b=rmOf(e); const inSplit=splitOf(e).includes(me.id);
+    const self=e.treat&&e.paidBy===me.id&&b!=null?(inSplit?b/n:0):null; // the bit of my own treat that was for me
+    return {f,n,b,rm:b==null?null:b*f,y:yenEq(e)*f,self,treatOut:self!=null?b-self:0}; };
+  let tot=0,totY=0,noRate=0,forMe=0,treats=0; const cats={}, treatTo={};
+  mineE.forEach(e=>{ const x=meta(e); if(!x.f) return; totY+=x.y; if(x.rm==null){noRate++;return}
+    tot+=x.rm; cats[e.cat||"Other"]=(cats[e.cat||"Other"]||0)+x.rm;
+    if(x.self!=null){ forMe+=x.self; treats+=x.treatOut; const others=splitOf(e).filter(id=>id!==me.id); others.forEach(id=>treatTo[id]=(treatTo[id]||0)+x.b/x.n); } else forMe+=x.rm; });
+  const got=S.expenses.filter(e=>e.treat&&e.paidBy!==me.id&&splitOf(e).includes(me.id));
+  const gotRM=got.reduce((a,e)=>{const b=rmOf(e); return a+(b==null?0:b/splitOf(e).length)},0);
   const maxc=Math.max(1,...Object.values(cats)); const D=myDebts(); const owed=D.filter(d=>d[1]>0).reduce((a,d)=>a+d[1],0), owe=D.filter(d=>d[1]<0).reduce((a,d)=>a-d[1],0);
   const byDate={}; [...mineE].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0)).forEach(e=>{(byDate[e.date]=byDate[e.date]||[]).push(e)});
   return `
@@ -674,20 +746,24 @@ function viewMine(){
     <div class="eyebrow">My spending</div>
     <div class="big num">${rm(tot)}</div><div class="small muted">${mineE.every(yenKnown)&&totY?`≈ ${yen(totY)} · `:""}${mineE.length} item${mineE.length===1?"":"s"}${noRate?` · ${noRate} without a rate yet`:""}</div>
     <div class="card"><dl class="kv">
+      ${treats>0.005?`<dt>On me</dt><dd>${rm(forMe)}</dd><dt>Treating others</dt><dd>${rm(treats)}${Object.keys(treatTo).length?`<br><span class="small muted">${Object.entries(treatTo).map(([id,v])=>`${esc(pname(id))} ${rm(v)}`).join(" · ")}</span>`:""}</dd>`:""}
+      ${gotRM>0.005?`<dt>Treated by others</dt><dd class="pos">${rm(gotRM)}<br><span class="small muted">not counted as my spending</span></dd>`:""}
       <dt>I paid up front</dt><dd>${rm(S.expenses.filter(e=>e.paidBy===me.id).reduce((a,e)=>a+(basis(e)||0),0))}</dd>
       <dt>Others owe me</dt><dd class="${owed>0.005?"pos":""}">${rm(owed)}</dd>
       <dt>I owe others</dt><dd class="${owe>0.005?"neg":""}">${rm(owe)}</dd>
-    </dl><div class="hint" style="margin-top:6px">Your share of everything you're in: your half of a shared ticket, your quarter of a group dinner, all of your own stuff. Details per person are under Group → Who owes who.</div></div>
+    </dl><div class="hint" style="margin-top:6px">Your share of everything you're in: your half of a shared ticket, your quarter of a group dinner, all of your own stuff, and all of anything you treated. Details per person are under Group → Who owes who.</div></div>
   </div>
   ${Object.keys(cats).length?`<div class="section"><h3>Where my money went</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${rm(v)} · ${(v/tot*100).toFixed(0)}%</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
   <div class="section"><div class="row"><h3>My items</h3><div class="spacer"></div>${W()?`<button class="btn small" data-act="addExp">+ Add</button>`:""}</div>
   ${Object.keys(byDate).length?Object.entries(byDate).map(([dt,arr])=>`
-    <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${rm(arr.reduce((a,e)=>a+(share(e).rm||0),0))}</span></div>
-    <div class="list">${arr.map(e=>{ const x=share(e); return `
+    <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${rm(arr.reduce((a,e)=>a+(meta(e).rm||0),0))}</span></div>
+    <div class="list">${arr.map(e=>{ const x=meta(e); const mineTreat=e.treat&&e.paidBy===me.id, theirTreat=e.treat&&!mineTreat;
+      const who=mineTreat?`my treat${x.n>1||!splitOf(e).includes(me.id)?` for ${splitOf(e).map(id=>id===me.id?"me":pname(id)).join(", ")}`:""}`:theirTreat?`${esc(pname(e.paidBy))}'s treat`:`${x.n>1?`split ${x.n} ways`:"just me"}${e.paidBy===me.id?" · I paid":` · ${esc(pname(e.paidBy))} paid`}`;
+      return `
       <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
-        <div class="main"><div class="ti">${esc(e.title||e.cat)}</div>
-          <div class="sub">${esc(e.cat||"Other")} · ${x.n>1?`split ${x.n} ways`:"just me"}${e.paidBy===me.id?" · I paid":` · ${esc(pname(e.paidBy))} paid`}</div></div>
-        <div class="amt">${x.rm==null?"—":rm(x.rm)}<small>${x.n>1?`of ${amtLabel(e)}`:amtLabel(e)}</small></div>
+        <div class="main"><div class="ti">${e.treat?"🎁 ":""}${esc(e.title||e.cat)}</div>
+          <div class="sub">${esc(e.cat||"Other")} · ${esc(who)}</div></div>
+        <div class="amt">${theirTreat?`${rm(0)}<small>treated, worth ${x.b==null?"—":rm(x.b/x.n)}</small>`:`${x.rm==null?"—":rm(x.rm)}<small>${x.f<1?`of ${amtLabel(e)}`:amtLabel(e)}</small>`}</div>
       </button>`}).join("")}</div>`).join(""):`<div class="empty">Nothing yet. Anything you're split into shows up here.</div>`}
   </div>`;
 }
@@ -704,7 +780,7 @@ function viewSpend(){
     <div class="list">${arr.map(e=>{const v=est(e);return `
       <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
         <div class="main"><div class="ti">${esc(e.title||e.cat)}</div>
-          <div class="sub">${esc(e.cat||"Other")} · ${esc(pname(e.paidBy))} paid · ${isRM(e)?"Paid in RM":e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
+          <div class="sub">${esc(e.cat||"Other")} · ${e.treat?`🎁 ${esc(pname(e.paidBy))}'s treat`:`${esc(pname(e.paidBy))} paid`} · ${isRM(e)?"Paid in RM":e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
           ${W()?`<div class="row" style="gap:6px;margin-top:6px">${!isRM(e)&&e.method==="card"&&!(e.bank>0)?`<span class="tag" data-bankfocus>+ Add bank amount</span>`:""}<span class="tag" style="border-color:var(--line);color:var(--muted)">Edit / delete</span></div>`:""}
         </div>
         <div class="amt">${isRM(e)?`${rm(e.rm||0)}<small>Charged in ringgit</small>`:`${yen(e.yen)}<small>${v==null?"Rate: not set":"Rate: "+rm(v)}${e.method==="card"?(e.bank>0?`<br>Bank: ${rm(e.bank)} <span class="${e.bank>v?"neg":"pos"}">${v?`(${e.bank>v?"+":""}${((e.bank-v)/v*100).toFixed(1)}%)`:""}</span>`:"<br>Bank: —"):""}</small>`}</div>
@@ -848,6 +924,9 @@ function viewTrip(){
     <div class="row"><h3>Tickets & bookings</h3><div class="spacer"></div>${S.canWrite?`<button class="btn small" data-act="addWallet">+ Upload</button>`:""}</div>
     ${S.wallet.length?`<div class="list">${S.wallet.map(w=>`<button class="li tap" data-wallet="${esc(w.id)}"><div class="main"><div class="ti">🎫 ${esc(w.title)}</div><div class="sub">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${isImg(w)?"Image":"PDF"}${visAll(w)?"":` · ${esc(visLabel(w))}`}</div></div></button>`).join("")}</div>`:`<div class="muted small">${S.canWrite?"Upload screenshots of shinkansen QR codes, bus tickets, hotel confirmations, Disney tickets. They also show on the right day in the Plan.":"Nothing uploaded yet."}</div>`}
   </div>
+  ${S.isOwner?`<div class="card section"><h3>Trip MVPs 🏆</h3>
+    <div class="small">${S.awards&&S.awards.revealedAt?"Revealed. Everyone sees them at the top of the Plan tab.":"End-of-trip awards like Top Spender, The Full Planner and The AFK. Peek now; reveal it to everyone when the trip ends."}</div>
+    <div class="row"><button class="btn small" data-act="mvpPreview">${S.awards&&S.awards.revealedAt?"Recalculate":"Preview (only you)"}</button>${S.awards&&S.awards.revealedAt?`<button class="btn small plain" data-act="mvpHide">Hide from everyone</button>`:""}</div></div>`:""}
   ${S.isOwner?`<div class="card section"><h3>Export & import</h3>
     <div class="small">Download everything in the trip as one file (plan, notes, to-dos, shopping, people, spending). Edit it or send it to Claude, then import it back here.</div>
     <div class="row"><button class="btn small" data-act="exportTrip">Export trip</button><button class="btn small plain" data-act="importUpdate">Import changes</button></div>
@@ -1131,7 +1210,8 @@ function expenseSheet(id,focusBank){
     <div class="f"><span class="lab">Category</span><div class="pick" id="eCat">${CATS.map(c=>`<button type="button" data-v="${c}" aria-pressed="${e.cat===c}">${c}</button>`).join("")}</div></div>
     <div class="grid2"><div class="f"><label for="ePaid">Paid by</label><select id="ePaid">${S.people.map(p=>`<option value="${esc(p.id)}" ${p.id===e.paidBy?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
       <div class="f"><span class="lab">Paid with</span><div class="pick" id="eMeth"><button type="button" data-v="card" aria-pressed="${e.method==="card"}">Card</button><button type="button" data-v="cash" aria-pressed="${e.method==="cash"}">Cash</button></div></div></div>
-    <div class="f"><span class="lab">Split between</span><div class="pick" id="eSplit">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${e.split.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div></div>
+    <div class="seg" role="group" id="eTreat"><button type="button" data-v="split" aria-pressed="${!e.treat}">Split the cost</button><button type="button" data-v="treat" aria-pressed="${!!e.treat}">🎁 My treat</button></div>
+    <div class="f"><span class="lab" id="eSplitLab">${e.treat?"Who it's for":"Split between"}</span><div class="pick" id="eSplit">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${e.split.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div></div>
     <div class="grid2" id="eFx"><div class="f"><label for="eRate">Rate (RM per ¥100)</label><input id="eRate" inputmode="decimal" value="${esc(e.rate100)}" placeholder="e.g. 2.95"><span class="hint" id="eRateHint"></span></div>
       <div class="f" id="eBankWrap"><label for="eBank">Bank charged (RM)</label><input id="eBank" inputmode="decimal" value="${esc(e.bank||"")}" placeholder="Fill in later"><span class="hint">From your bank app.</span></div></div>
     <div class="hint">Only the people in the split, whoever paid and the Owner can see this.</div>
@@ -1143,18 +1223,21 @@ function expenseSheet(id,focusBank){
     const num=v=>{const n=parseFloat(String(v).replace(/[^\d.]/g,""));return isFinite(n)?n:0};
     let rateTouched=!!id;
     const upd=()=>{
+      const treat=val("#eTreat")[0]==="treat"; $("#eSplitLab",p).textContent=treat?"Who it's for":"Split between";
       const cur=val("#eCur")[0]||"JPY"; $("#eFx",p).hidden=cur==="MYR"; $("#eAmtLab",p).textContent=cur==="MYR"?"Amount (RM)":"Amount (¥)";
-      if(cur==="MYR"){ const a=num($("#eYen",p).value), sp=val("#eSplit").length||1; $("#ePrev",p).innerHTML=a?`${rm(a)} charged in ringgit, no conversion<br><span class="muted">${rm(a/sp)} each for ${sp} ${sp>1?"people":"person"}</span>`:`<span class="muted">Enter the ringgit amount, e.g. a hotel or ticket you booked online</span>`; return; }
+      const payer=pname($("#ePaid",p).value);
+      if(cur==="MYR"){ const a=num($("#eYen",p).value), sp=val("#eSplit").length||1; $("#ePrev",p).innerHTML=a?`${rm(a)} charged in ringgit, no conversion<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:`${rm(a/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the ringgit amount, e.g. a hotel or ticket you booked online</span>`; return; }
       const y=num($("#eYen",p).value), r=num($("#eRate",p).value), b=num($("#eBank",p).value), card=val("#eMeth")[0]==="card";
       $("#eBankWrap",p).hidden=!card;
       const ev=r?y*r/100:null; const sp=val("#eSplit").length||1;
-      $("#ePrev",p).innerHTML= y? `${yen(y)} ${ev!=null?`≈ <strong>${rm(ev)}</strong> at the day's rate`:"(no rate yet)"}${card&&b&&ev?` · bank ${rm(b)} <span class="${b>ev?"neg":"pos"}">(${b>ev?"+":""}${((b-ev)/ev*100).toFixed(1)}%)</span>`:""}<br><span class="muted">${rm((card&&b?b:(ev||0))/sp)} each for ${sp} ${sp>1?"people":"person"}</span>`:`<span class="muted">Enter the yen amount to see the ringgit.</span>`;
+      $("#ePrev",p).innerHTML= y? `${yen(y)} ${ev!=null?`≈ <strong>${rm(ev)}</strong> at the day's rate`:"(no rate yet)"}${card&&b&&ev?` · bank ${rm(b)} <span class="${b>ev?"neg":"pos"}">(${b>ev?"+":""}${((b-ev)/ev*100).toFixed(1)}%)</span>`:""}<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:`${rm((card&&b?b:(ev||0))/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the yen amount to see the ringgit.</span>`;
     };
     const syncRate=()=>{ const d=$("#eDate",p).value; const rr=rateFor(d); const h=$("#eRateHint",p);
       if(!rateTouched&&rr) $("#eRate",p).value=rr.rate100;
       h.textContent=rr?(rr.exact?"Saved rate for this day":"Using "+fmtDate(rr.date)+" rate"):"No rate saved yet"; upd(); };
-    pick("#eCat"); pick("#eMeth"); pick("#eSplit",true); pick("#eCur");
+    pick("#eCat"); pick("#eMeth"); pick("#eSplit",true); pick("#eCur"); pick("#eTreat");
     ["#eYen","#eBank"].forEach(s=>$(s,p).addEventListener("input",upd));
+    $("#ePaid",p).addEventListener("change",upd);
     $("#eRate",p).addEventListener("input",()=>{rateTouched=true;upd()});
     $("#eDate",p).addEventListener("change",syncRate);
     syncRate();
@@ -1163,7 +1246,7 @@ function expenseSheet(id,focusBank){
       const cur=val("#eCur")[0]||"JPY"; const y=num($("#eYen",p).value); if(!y){toast(cur==="MYR"?"Enter the amount in ringgit":"Enter the amount in yen");return}
       const split=val("#eSplit"); if(!split.length){toast("Pick at least one person to split with");return}
       const date=$("#eDate",p).value||todayJST(); const r=num($("#eRate",p).value); const method=val("#eMeth")[0]||"card";
-      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,createdAt:e.createdAt||Date.now(),by:e.by||S.myId};
+      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,treat:val("#eTreat")[0]==="treat",createdAt:e.createdAt||Date.now(),by:e.by||S.myId};
       const doc=cur==="MYR"?{...base,cur:"MYR",rm:Math.round(y*100)/100,yen:null,rate100:null,bank:null}:{...base,cur:"JPY",yen:Math.round(y),rate100:r||null,bank:method==="card"?(num($("#eBank",p).value)||null):null};
       const ok=await write(async()=>{
         if(id) await S.db.doc("expenses/"+id).set(doc); else await S.db.collection("expenses").add(doc);
@@ -1316,6 +1399,8 @@ document.addEventListener("click",async ev=>{
     case "joinTrip": joinTrip(); break;
     case "newInvite": newInvite(a.dataset.role); break;
     case "exportTrip": exportTrip(); break;
+    case "mvpPreview": mvpPreview(); break;
+    case "mvpHide": write(()=>deleteDoc(doc(fs,"meta/awards")),"MVPs hidden",["Hid the trip MVPs",""]); break;
     case "importUpdate": importUpdate(); break;
     case "shareInvite": shareInvite(a.dataset.link,a.dataset.role,a); break;
     case "copyInvite": { const v=a.dataset.link; try{await navigator.clipboard.writeText(v);toast("Invite link copied")}catch(e){toast("Copy the link from the box")} break; }
@@ -1368,7 +1453,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
       const xq=(k,cons)=>unsubs.push(onSnapshot(query(collection(fs,"expenses"),...cons),sn=>{ xp[k]=sn.docs.map(d=>({id:d.id,...d.data()})); xm(); },e=>console.warn("expenses",k,e)));
       xq("by",[where("by","==",S.myId)]); const pid=(S.member||{}).personId;
       if(pid){ xq("split",[where("split","array-contains",pid)]); xq("paid",[where("paidBy","==",pid)]); } }
-    sub("rates",null,v=>{S.rates={}; v.forEach(r=>S.rates[r.id]=r)}); sub("meta",null,v=>{S.meta=v.find(x=>x.id==="trip")||{}});
+    sub("rates",null,v=>{S.rates={}; v.forEach(r=>S.rates[r.id]=r)}); sub("meta",null,v=>{S.meta=v.find(x=>x.id==="trip")||{}; S.awards=v.find(x=>x.id==="awards")||null;});
     if(S.isOwner) sub("wallet","at",v=>{ S.wallet=v; const old=v.filter(w=>!w.vis); if(old.length){ const b=writeBatch(fs); old.forEach(w=>b.update(doc(fs,"wallet/"+w.id),{vis:["all"]})); b.commit().catch(()=>{}); } });
     else { const parts={}; const merge=()=>{ const m=new Map(); Object.values(parts).forEach(a=>a.forEach(w=>m.set(w.id,w))); S.wallet=[...m.values()].sort((a,b)=>(a.at||0)-(b.at||0)); render(); };
       const wq=(key,cons)=>unsubs.push(onSnapshot(query(collection(fs,"wallet"),...cons),sn=>{ parts[key]=sn.docs.map(d=>({id:d.id,...d.data()})); merge(); },e=>console.warn("wallet",key,e)));
