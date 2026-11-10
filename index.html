@@ -666,7 +666,15 @@ async function computeAwards(){
     add("afk","💤","The AFK",afk,pid=>st[pid].acts?`only ${st[pid].acts} change${st[pid].acts>1?"s":""} the whole trip`:"didn't touch the app once"); } }
   const spenders=P.filter(id=>st[id].spend>0); if(spenders.length>1){ const low=[...spenders].sort((a,b)=>st[a].spend-st[b].spend).find(id=>(won[id]||0)<CAP);
     add("saver","🪙","The Budget King",low,pid=>`spent only ${rm(st[pid].spend)}`); }
-  return list.map(x=>({key:x.key,emoji:x.emoji,title:x.title,pid:x.pid,line:x.line(x.pid)}));
+  // Fewer people, fewer awards: headcount + 1. Everyone gets one before anyone gets a second; the rest by priority.
+  const PRI=["spender","planner","afk","heart","bank","foodie","shop","saver","sponsored","accountant","tix","cash"];
+  list.sort((a,b)=>PRI.indexOf(a.key)-PRI.indexOf(b.key));
+  const max=Math.max(2,P.length+1), pick=[], got={};
+  if(list[0]){ pick.push(list[0]); got[list[0].pid]=1; }
+  for(const a of list.slice(1)){ if(pick.length>=max) break; if(!got[a.pid]){ pick.push(a); got[a.pid]=1; } }
+  for(const a of list.slice(1)){ if(pick.length>=max) break; if(!pick.includes(a)){ pick.push(a); got[a.pid]=(got[a.pid]||0)+1; } }
+  pick.sort((a,b)=>PRI.indexOf(a.key)-PRI.indexOf(b.key));
+  return pick.map(x=>({key:x.key,emoji:x.emoji,title:x.title,pid:x.pid,line:x.line(x.pid)}));
 }
 function mvpCard(A,opts){ opts=opts||{};
   const L=(A&&A.list)||[]; if(!L.length) return `<div class="mvp"><h3>TRIP MVPs</h3><div class="sub">Not enough happened in the app yet to hand out awards.</div></div>`;
