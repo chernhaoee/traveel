@@ -47,6 +47,8 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .brand p{margin:0;font-size:12.5px;color:var(--muted)}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--fg);background:transparent;white-space:nowrap}
 .chip.soft{border-color:var(--line);color:var(--muted)}
+.sthumb{flex:none;width:44px;height:44px;border-radius:10px;overflow:hidden;border:1px solid var(--line);padding:0;background:var(--fill);cursor:zoom-in}
+.sthumb img{width:100%;height:100%;object-fit:cover;display:block}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
 .mvp .sub{color:#c9bde0;font-size:13px}
@@ -415,6 +417,7 @@ const amtLabel = e => isRM(e)?rm(e.rm||0):yen(e.yen||0);
 const splitOf = e => (e.split&&e.split.length?e.split:S.people.map(p=>p.id));
 function rmOf(e){ let b=basis(e); if(b==null){ const r=(rateFor(e.date)||{}).rate100; if(r) b=(e.yen||0)*r/100; } return b; }
 // What this expense costs one person. A treat is all on whoever paid; everyone else pays nothing.
+const eachPaid = e => !!e.each; // split evenly, and everyone paid their own part: nobody owes anybody
 function shareFor(e,pid){ const n=splitOf(e).length||1;
   if(e.treat) return e.paidBy===pid?{f:1,n}:{f:0,n};
   return splitOf(e).includes(pid)?{f:1/n,n}:{f:0,n}; }
@@ -432,7 +435,7 @@ function totals(){
 function balances(){
   const net={}; S.people.forEach(p=>net[p.id]=0);
   for(const e of S.expenses){
-    const v=basis(e); if(v==null||!e.paidBy||e.treat) continue;
+    const v=basis(e); if(v==null||!e.paidBy||e.treat||eachPaid(e)) continue;
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id)).filter(id=>id in net);
     if(!split.length) continue;
     if(e.paidBy in net) net[e.paidBy]+=v;
@@ -447,7 +450,7 @@ function balances(){
 }
 function myDebts(){ // exact pairwise, from expenses I'm in (all of which I can see)
   const me=myPerson(); if(!me) return []; const pair={};
-  for(const e of S.expenses){ const v=basis(e); if(v==null||!e.paidBy||e.treat) continue;
+  for(const e of S.expenses){ const v=basis(e); if(v==null||!e.paidBy||e.treat||eachPaid(e)) continue;
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id)); const sh=v/split.length;
     if(e.paidBy===me.id) split.forEach(id=>{ if(id!==me.id) pair[id]=(pair[id]||0)+sh; });
     else if(split.includes(me.id)) pair[e.paidBy]=(pair[e.paidBy]||0)-sh; }
@@ -642,7 +645,8 @@ async function computeAwards(){
   const P=S.people.map(p=>p.id); const st={}; P.forEach(id=>st[id]={spend:0,treatOut:0,treatIn:0,food:0,shop:0,front:0,logged:0,plan:0,acts:0,tix:0,cash:0});
   for(const e of S.expenses){ const b=rmOf(e); if(b==null) continue; const sp=splitOf(e), n=sp.length||1;
     P.forEach(id=>{ const {f}=shareFor(e,id); if(!f) return; st[id].spend+=b*f; if(e.cat==="Food") st[id].food+=b*f; if(e.cat==="Shopping") st[id].shop+=b*f; });
-    if(e.paidBy in st){ st[e.paidBy].front+=b; if(e.method==="cash"&&!isRM(e)) st[e.paidBy].cash++; }
+    if(eachPaid(e)) sp.forEach(id=>{ if(id in st) st[id].front+=b/n; });
+    else if(e.paidBy in st){ st[e.paidBy].front+=b; if(e.method==="cash"&&!isRM(e)) st[e.paidBy].cash++; }
     if(e.treat&&e.paidBy in st){ sp.forEach(id=>{ if(id!==e.paidBy&&id in st){ st[e.paidBy].treatOut+=b/n; st[id].treatIn+=b/n; } }); }
     const ap=pidOf(e.by); if(ap in st) st[ap].logged++; }
   for(const a of audit){ const id=pidOf(a.uid); if(!(id in st)) continue; st[id].acts++;
@@ -725,7 +729,8 @@ function myBudget(){
   for(const e of S.expenses){
     const {f}=shareFor(e,me.id);
     if(f){ yenShare+=yenEq(e)*f; const b=rmOf(e); if(b!=null) rmShare+=b*f; }
-    if(e.paidBy===me.id){ paid+=yenEq(e); const b=basis(e); if(b!=null) paidRM+=b; }
+    if(eachPaid(e)){ if(splitOf(e).includes(me.id)){ paid+=yenEq(e)/splitOf(e).length; const b=basis(e); if(b!=null) paidRM+=b/splitOf(e).length; } }
+    else if(e.paidBy===me.id){ paid+=yenEq(e); const b=basis(e); if(b!=null) paidRM+=b; }
   }
   let cur=ls.get("budgetCur_"+me.id,"JPY"); const bRM=Number(ls.get("budgetRM_"+me.id,""))||0, bRate=0;
   if(cur==="MYR"&&!bRM) cur="JPY";
@@ -756,7 +761,7 @@ function viewMine(){
     <div class="card"><dl class="kv">
       ${treats>0.005?`<dt>On me</dt><dd>${rm(forMe)}</dd><dt>Treating others</dt><dd>${rm(treats)}${Object.keys(treatTo).length?`<br><span class="small muted">${Object.entries(treatTo).map(([id,v])=>`${esc(pname(id))} ${rm(v)}`).join(" · ")}</span>`:""}</dd>`:""}
       ${gotRM>0.005?`<dt>Treated by others</dt><dd class="pos">${rm(gotRM)}<br><span class="small muted">not counted as my spending</span></dd>`:""}
-      <dt>I paid up front</dt><dd>${rm(S.expenses.filter(e=>e.paidBy===me.id).reduce((a,e)=>a+(basis(e)||0),0))}</dd>
+      <dt>I paid up front</dt><dd>${rm(S.expenses.reduce((a,e)=>a+(eachPaid(e)?(splitOf(e).includes(me.id)?(basis(e)||0)/splitOf(e).length:0):(e.paidBy===me.id?(basis(e)||0):0)),0))}</dd>
       <dt>Others owe me</dt><dd class="${owed>0.005?"pos":""}">${rm(owed)}</dd>
       <dt>I owe others</dt><dd class="${owe>0.005?"neg":""}">${rm(owe)}</dd>
     </dl><div class="hint" style="margin-top:6px">Your share of everything you're in: your half of a shared ticket, your quarter of a group dinner, all of your own stuff, and all of anything you treated. Details per person are under Group → Who owes who.</div></div>
@@ -766,7 +771,7 @@ function viewMine(){
   ${Object.keys(byDate).length?Object.entries(byDate).map(([dt,arr])=>`
     <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${rm(arr.reduce((a,e)=>a+(meta(e).rm||0),0))}</span></div>
     <div class="list">${arr.map(e=>{ const x=meta(e); const mineTreat=e.treat&&e.paidBy===me.id, theirTreat=e.treat&&!mineTreat;
-      const who=mineTreat?`my treat${x.n>1||!splitOf(e).includes(me.id)?` for ${splitOf(e).map(id=>id===me.id?"me":pname(id)).join(", ")}`:""}`:theirTreat?`${esc(pname(e.paidBy))}'s treat`:`${x.n>1?`split ${x.n} ways`:"just me"}${e.paidBy===me.id?" · I paid":` · ${esc(pname(e.paidBy))} paid`}`;
+      const who=eachPaid(e)?`split ${x.n} ways · everyone paid their own`:mineTreat?`my treat${x.n>1||!splitOf(e).includes(me.id)?` for ${splitOf(e).map(id=>id===me.id?"me":pname(id)).join(", ")}`:""}`:theirTreat?`${esc(pname(e.paidBy))}'s treat`:`${x.n>1?`split ${x.n} ways`:"just me"}${e.paidBy===me.id?" · I paid":` · ${esc(pname(e.paidBy))} paid`}`;
       return `
       <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
         <div class="main"><div class="ti">${e.treat?"🎁 ":""}${esc(e.title||e.cat)}</div>
@@ -788,7 +793,7 @@ function viewSpend(){
     <div class="list">${arr.map(e=>{const v=est(e);return `
       <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
         <div class="main"><div class="ti">${esc(e.title||e.cat)}</div>
-          <div class="sub">${esc(e.cat||"Other")} · ${e.treat?`🎁 ${esc(pname(e.paidBy))}'s treat`:`${esc(pname(e.paidBy))} paid`} · ${isRM(e)?"Paid in RM":e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
+          <div class="sub">${esc(e.cat||"Other")} · ${e.treat?`🎁 ${esc(pname(e.paidBy))}'s treat`:eachPaid(e)?`each paid their own`:`${esc(pname(e.paidBy))} paid`} · ${isRM(e)?"Paid in RM":e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
           ${W()?`<div class="row" style="gap:6px;margin-top:6px">${!isRM(e)&&e.method==="card"&&!(e.bank>0)?`<span class="tag" data-bankfocus>+ Add bank amount</span>`:""}<span class="tag" style="border-color:var(--line);color:var(--muted)">Edit / delete</span></div>`:""}
         </div>
         <div class="amt">${isRM(e)?`${rm(e.rm||0)}<small>Charged in ringgit</small>`:`${yen(e.yen)}<small>${v==null?"Rate: not set":"Rate: "+rm(v)}${e.method==="card"?(e.bank>0?`<br>Bank: ${rm(e.bank)} <span class="${e.bank>v?"neg":"pos"}">${v?`(${e.bank>v?"+":""}${((e.bank-v)/v*100).toFixed(1)}%)`:""}</span>`:"<br>Bank: —"):""}</small>`}</div>
@@ -861,6 +866,7 @@ function viewShop(){
   ${items.length?groups.map(g=>{const xs=items.filter(x=>(x.where||"Anywhere")===g);
     return `<div class="section"><div class="grouphead"><h3>${esc(g)}</h3><span class="small muted num">${xs.filter(x=>x.done).length}/${xs.length}</span></div>
     <div>${xs.map(x=>`<div class="task${x.done?" done":""}"><input type="checkbox" data-shopcheck="${esc(x.id)}" ${x.done?"checked":""} ${W()?"":"disabled"} aria-label="${esc(x.text)}">
+      ${x.thumb?`<button class="sthumb" data-photo="${esc(x.photo||"")}" data-ptitle="${esc(x.text)}" aria-label="Photo of ${esc(x.text)}"><img src="${esc(x.thumb)}" alt=""></button>`:""}
       <button class="main" ${W()?`data-shop="${esc(x.id)}"`:"disabled"}><div class="ti">${esc(x.text)}</div><div class="sub">${esc(shopFor(x))}${x.note?` · ${esc(x.note)}`:""}</div></button>${x.price?`<span class="due num">${yen(x.price)}</span>`:""}</div>`).join("")}</div></div>`}).join("")
     :`<div class="empty">${S.shopping.length?"Everything here is bought.":"Nothing on the list yet."}${W()?" Add what you want to buy, and where.":""}</div>`}`;
 }
@@ -1113,6 +1119,13 @@ function visWire(p){ const box=$("[data-vispick]",p); if(!box) return;
     b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true")); const any=[...box.querySelectorAll('[data-vis]:not([data-vis="all"])')].some(x=>x.getAttribute("aria-pressed")==="true");
     all.setAttribute("aria-pressed",String(!any)); }); }
 function visRead(p){ const sel=[...$("[data-vispick]",p).querySelectorAll('[data-vis][aria-pressed="true"]')].map(x=>x.dataset.vis); return (!sel.length||sel.includes("all"))?["all"]:sel; }
+async function makeThumb(f){ const bmp=await createImageBitmap(f); const sc=Math.min(1,200/Math.max(bmp.width,bmp.height));
+  const c=document.createElement("canvas"); c.width=Math.round(bmp.width*sc); c.height=Math.round(bmp.height*sc); const g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(bmp,0,0,c.width,c.height);
+  return c.toDataURL("image/jpeg",0.6); }
+async function photoSheet(fileId,title,thumb){
+  openSheet(title||"Photo",`<div id="phBody" style="text-align:center">${thumb?`<img src="${esc(thumb)}" alt="" style="max-width:100%;border-radius:12px;filter:blur(2px)">`:`<div class="muted small">Loading…</div>`}</div>`,async p=>{
+    try{ const f=await fileURL(fileId); $("#phBody",p).innerHTML=f?`<img src="${f.url}" alt="${esc(title||"")}" style="max-width:100%;border-radius:12px">`:`<div class="muted small">Photo not found.</div>`; }catch(e){ $("#phBody",p).innerHTML=`<div class="muted small">Couldn't load the photo.</div>`; } });
+}
 async function compressFile(f){
   const toURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
   if(f.type==="application/pdf"){ if(f.size>700*1024) throw {code:"pdf_big"}; return {data:await toURL(f),type:f.type}; }
@@ -1176,20 +1189,31 @@ function shopSheet(id){
       <div class="f"><label for="sPrice">Price (¥, optional)</label><input id="sPrice" inputmode="numeric" value="${esc(x.price||"")}"></div></div>
     <div class="f"><span class="lab">For</span><div class="pick" id="sFor"><button type="button" data-v="" aria-pressed="${!tg.length}">Whole group</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${tg.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div><span class="hint">Tag one or more people, e.g. a gift you and a friend are splitting.</span></div>
     <div class="f"><label for="sNote">Note (optional)</label><input id="sNote" value="${esc(x.note||"")}" placeholder="Size, colour, which flavour…"></div>
+    <div class="f"><span class="lab">Photo (optional)</span><div class="row" style="align-items:center;gap:10px">
+      <div id="sPhPrev" class="sthumb" style="cursor:default;${x.thumb?"":"display:none"}">${x.thumb?`<img src="${esc(x.thumb)}" alt="">`:""}</div>
+      <label class="btn small plain" style="cursor:pointer">${x.thumb?"Change photo":"Add photo"}<input id="sPhoto" type="file" accept="image/*" hidden></label>
+      ${x.thumb?`<button type="button" class="btn small plain" id="sPhDel">Remove</button>`:""}</div></div>
     ${id?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="sDel">Delete</button></div>`:""}
     <button class="btn primary" id="sSave">${id?"Save":"Add"}</button>`,p=>{
     $("#sFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return; const box=$("#sFor",p), ev0=box.querySelector('[data-v=""]');
       if(b===ev0){ box.querySelectorAll("button").forEach(y=>y.setAttribute("aria-pressed",String(y===ev0))); return; }
       b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true"));
       ev0.setAttribute("aria-pressed",String(![...box.querySelectorAll('button:not([data-v=""])')].some(y=>y.getAttribute("aria-pressed")==="true"))); });
+    let newPhoto=null, dropPhoto=false;
+    $("#sPhoto",p).addEventListener("change",async ev=>{ const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+      try{ const th=await makeThumb(f); newPhoto=f; dropPhoto=false; const pv=$("#sPhPrev",p); pv.style.display=""; pv.innerHTML=`<img src="${th}" alt="">`; newPhoto._thumb=th; }catch(e){ toast("Couldn't read that photo"); } });
+    if($("#sPhDel",p)) $("#sPhDel",p).onclick=()=>{ dropPhoto=true; newPhoto=null; $("#sPhPrev",p).style.display="none"; toast("Photo will be removed when you save"); };
     $("#sSave",p).onclick=async()=>{
       const text=$("#sText",p).value.trim(); if(!text){toast("Write what to buy");return}
       const price=parseFloat($("#sPrice",p).value.replace(/[^\d.]/g,""))||null;
       const doc={text,where:$("#sWhere",p).value.trim(),for:[...$("#sFor",p).querySelectorAll('button[aria-pressed="true"]:not([data-v=""])')].map(b=>b.dataset.v),price,note:$("#sNote",p).value.trim()};
+      const oldPhoto=x.photo||null;
+      if(newPhoto){ try{ const c=await compressFile(newPhoto); const ref=await S.db.collection("files").add({data:c.data,type:c.type,by:S.myId,at:Date.now(),vis:["all"],kind:"shopping"}); doc.photo=ref.id; doc.thumb=newPhoto._thumb; }catch(e){ toast("Couldn't upload the photo: "+(e.code||e.message||"try again")); return; } }
+      else if(dropPhoto){ doc.photo=null; doc.thumb=null; }
       const ok=await write(()=> id?S.db.doc("shopping/"+id).update(doc):S.db.collection("shopping").add({...doc,done:false,at:Date.now(),by:S.myId||null}), id?"Saved":"Added",[id?"Edited shopping item":"Added to shopping list",text+(doc.where?" · "+doc.where:"")]);
-      if(ok) closeSheet();
+      if(ok){ if(oldPhoto&&(newPhoto||dropPhoto)) S.db.doc("files/"+oldPhoto).delete().catch(()=>{}); closeSheet(); }
     };
-    if(id) twoStep($("#sDel",p),"Tap again to delete",async()=>{ if(await write(()=>S.db.doc("shopping/"+id).delete(),"Deleted",["Deleted shopping item",x.text])) closeSheet(); });
+    if(id) twoStep($("#sDel",p),"Tap again to delete",async()=>{ if(await write(()=>S.db.doc("shopping/"+id).delete(),"Deleted",["Deleted shopping item",x.text])){ if(x.photo) S.db.doc("files/"+x.photo).delete().catch(()=>{}); closeSheet(); } });
   });
 }
 function dayVisSheet(){
@@ -1216,9 +1240,9 @@ function expenseSheet(id,focusBank){
     <div class="grid2"><div class="f"><label for="eYen" id="eAmtLab">${isRM(e)?"Amount (RM)":"Amount (¥)"}</label><input id="eYen" inputmode="decimal" value="${esc(isRM(e)?(e.rm||""):e.yen)}" placeholder="0"></div>
       <div class="f"><label for="eDate">Date</label><input id="eDate" type="date" value="${esc(e.date)}"></div></div>
     <div class="f"><span class="lab">Category</span><div class="pick" id="eCat">${CATS.map(c=>`<button type="button" data-v="${c}" aria-pressed="${e.cat===c}">${c}</button>`).join("")}</div></div>
-    <div class="grid2"><div class="f"><label for="ePaid">Paid by</label><select id="ePaid">${S.people.map(p=>`<option value="${esc(p.id)}" ${p.id===e.paidBy?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
+    <div class="grid2"><div class="f" id="ePaidWrap"><label for="ePaid">${e.treat?"Whose treat":"Paid by"}</label><select id="ePaid">${S.people.map(p=>`<option value="${esc(p.id)}" ${p.id===e.paidBy?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
       <div class="f"><span class="lab">Paid with</span><div class="pick" id="eMeth"><button type="button" data-v="card" aria-pressed="${e.method==="card"}">Card</button><button type="button" data-v="cash" aria-pressed="${e.method==="cash"}">Cash</button></div></div></div>
-    <div class="seg" role="group" id="eTreat"><button type="button" data-v="split" aria-pressed="${!e.treat}">Split the cost</button><button type="button" data-v="treat" aria-pressed="${!!e.treat}">🎁 My treat</button></div>
+    <div class="seg" role="group" id="eTreat"><button type="button" data-v="split" aria-pressed="${!e.treat&&!e.each}">One person paid</button><button type="button" data-v="each" aria-pressed="${!!e.each}">Each paid own</button><button type="button" data-v="treat" aria-pressed="${!!e.treat}">🎁 Treat</button></div>
     <div class="f"><span class="lab" id="eSplitLab">${e.treat?"Who it's for":"Split between"}</span><div class="pick" id="eSplit">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${e.split.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div></div>
     <div class="grid2" id="eFx"><div class="f"><label for="eRate">Rate (RM per ¥100)</label><input id="eRate" inputmode="decimal" value="${esc(e.rate100)}" placeholder="e.g. 2.95"><span class="hint" id="eRateHint"></span></div>
       <div class="f" id="eBankWrap"><label for="eBank">Bank charged (RM)</label><input id="eBank" inputmode="decimal" value="${esc(e.bank||"")}" placeholder="Fill in later"><span class="hint">From your bank app.</span></div></div>
@@ -1231,14 +1255,15 @@ function expenseSheet(id,focusBank){
     const num=v=>{const n=parseFloat(String(v).replace(/[^\d.]/g,""));return isFinite(n)?n:0};
     let rateTouched=!!id;
     const upd=()=>{
-      const treat=val("#eTreat")[0]==="treat"; $("#eSplitLab",p).textContent=treat?"Who it's for":"Split between";
+      const mode=val("#eTreat")[0]||"split", treat=mode==="treat", each=mode==="each";
+      $("#eSplitLab",p).textContent=treat?"Who it's for":"Split between"; $("#ePaidWrap",p).hidden=each;
       const cur=val("#eCur")[0]||"JPY"; $("#eFx",p).hidden=cur==="MYR"; $("#eAmtLab",p).textContent=cur==="MYR"?"Amount (RM)":"Amount (¥)";
       const payer=pname($("#ePaid",p).value);
-      if(cur==="MYR"){ const a=num($("#eYen",p).value), sp=val("#eSplit").length||1; $("#ePrev",p).innerHTML=a?`${rm(a)} charged in ringgit, no conversion<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:`${rm(a/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the ringgit amount, e.g. a hotel or ticket you booked online</span>`; return; }
+      if(cur==="MYR"){ const a=num($("#eYen",p).value), sp=val("#eSplit").length||1; $("#ePrev",p).innerHTML=a?`${rm(a)} charged in ringgit, no conversion<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:each?`${rm(a/sp)} each, everyone paid their own part, nobody owes anything`:`${rm(a/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the ringgit amount, e.g. a hotel or ticket you booked online</span>`; return; }
       const y=num($("#eYen",p).value), r=num($("#eRate",p).value), b=num($("#eBank",p).value), card=val("#eMeth")[0]==="card";
       $("#eBankWrap",p).hidden=!card;
       const ev=r?y*r/100:null; const sp=val("#eSplit").length||1;
-      $("#ePrev",p).innerHTML= y? `${yen(y)} ${ev!=null?`≈ <strong>${rm(ev)}</strong> at the day's rate`:"(no rate yet)"}${card&&b&&ev?` · bank ${rm(b)} <span class="${b>ev?"neg":"pos"}">(${b>ev?"+":""}${((b-ev)/ev*100).toFixed(1)}%)</span>`:""}<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:`${rm((card&&b?b:(ev||0))/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the yen amount to see the ringgit.</span>`;
+      $("#ePrev",p).innerHTML= y? `${yen(y)} ${ev!=null?`≈ <strong>${rm(ev)}</strong> at the day's rate`:"(no rate yet)"}${card&&b&&ev?` · bank ${rm(b)} <span class="${b>ev?"neg":"pos"}">(${b>ev?"+":""}${((b-ev)/ev*100).toFixed(1)}%)</span>`:""}<br><span class="muted">${treat?`${esc(payer)}'s treat: all of it counts as ${esc(payer)}'s spending, nobody owes anything`:each?`${rm((card&&b?b:(ev||0))/sp)} each, everyone paid their own part, nobody owes anything`:`${rm((card&&b?b:(ev||0))/sp)} each for ${sp} ${sp>1?"people":"person"}`}</span>`:`<span class="muted">Enter the yen amount to see the ringgit.</span>`;
     };
     const syncRate=()=>{ const d=$("#eDate",p).value; const rr=rateFor(d); const h=$("#eRateHint",p);
       if(!rateTouched&&rr) $("#eRate",p).value=rr.rate100;
@@ -1254,7 +1279,7 @@ function expenseSheet(id,focusBank){
       const cur=val("#eCur")[0]||"JPY"; const y=num($("#eYen",p).value); if(!y){toast(cur==="MYR"?"Enter the amount in ringgit":"Enter the amount in yen");return}
       const split=val("#eSplit"); if(!split.length){toast("Pick at least one person to split with");return}
       const date=$("#eDate",p).value||todayJST(); const r=num($("#eRate",p).value); const method=val("#eMeth")[0]||"card";
-      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,treat:val("#eTreat")[0]==="treat",createdAt:e.createdAt||Date.now(),by:e.by||S.myId};
+      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:val("#eTreat")[0]==="each"?(split.includes((myPerson()||{}).id)?myPerson().id:split[0]):$("#ePaid",p).value,split,method,treat:val("#eTreat")[0]==="treat",each:val("#eTreat")[0]==="each",createdAt:e.createdAt||Date.now(),by:e.by||S.myId};
       const doc=cur==="MYR"?{...base,cur:"MYR",rm:Math.round(y*100)/100,yen:null,rate100:null,bank:null}:{...base,cur:"JPY",yen:Math.round(y),rate100:r||null,bank:method==="card"?(num($("#eBank",p).value)||null):null};
       const ok=await write(async()=>{
         if(id) await S.db.doc("expenses/"+id).set(doc); else await S.db.collection("expenses").add(doc);
@@ -1368,6 +1393,7 @@ document.addEventListener("click",async ev=>{
   const sf=t.closest("[data-shopf]"); if(sf){ const v=sf.dataset.shopf; let F=[...(S.shopFilter||[])];
     if(!v) F=[]; else F=F.includes(v)?F.filter(x=>x!==v):[...F,v];
     S.shopFilter=F; ls.set("shopFilter",JSON.stringify(F)); render(); return; }
+  const ph=t.closest("[data-photo]"); if(ph){ const x=S.shopping.find(y=>y.photo===ph.dataset.photo); if(ph.dataset.photo) photoSheet(ph.dataset.photo,ph.dataset.ptitle,x&&x.thumb); return; }
   const svb=t.closest("[data-spendview]"); if(svb){S.spendView=svb.dataset.spendview;ls.set("spendView",S.spendView);render();return}
   const ivr=t.closest("[data-invrole]"); if(ivr){S.invRole=ivr.dataset.invrole;ls.set("invRole",S.invRole);render();return}
   const th=t.closest("[data-theme-set]"); if(th){ls.set("theme",th.dataset.themeSet);applyTheme();render();return}
