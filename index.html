@@ -391,16 +391,20 @@ function rateFor(date){
   if(k) return {...S.rates[k],date:k,exact:false};
   return S.liveRate?{...S.liveRate,exact:false,live:true}:null;
 }
-function est(e){ return e.rate100? e.yen*e.rate100/100 : null }
-function basis(e){ if(e.method==="card"&&e.bank>0) return e.bank; return est(e) }
+const isRM = e => e.cur==="MYR";
+function est(e){ if(isRM(e)) return e.rm||0; return e.rate100? e.yen*e.rate100/100 : null }
+function yenEq(e){ if(!isRM(e)) return e.yen||0; const r=e.rate100||(rateFor(e.date)||{}).rate100; return r?(e.rm||0)/r*100:0; }
+const amtLabel = e => isRM(e)?rm(e.rm||0):yen(e.yen||0);
+function basis(e){ if(isRM(e)) return e.rm||0; if(e.method==="card"&&e.bank>0) return e.bank; return est(e) }
 function totals(){
-  let y=0,estSum=0,missing=0,bank=0,bankEst=0,bankN=0,cardN=0,actual=0;
+  let y=0,myr=0,myrN=0,estSum=0,missing=0,bank=0,bankEst=0,bankN=0,cardN=0,actual=0;
   for(const e of S.expenses){
+    if(isRM(e)){ myr+=e.rm||0; myrN++; estSum+=e.rm||0; actual+=e.rm||0; continue; }
     y+=e.yen||0; const v=est(e); if(v==null) missing++; else estSum+=v;
     const b=basis(e); if(b!=null) actual+=b;
     if(e.method==="card"){cardN++; if(e.bank>0&&v!=null){bank+=e.bank;bankEst+=v;bankN++}}
   }
-  return {y,estSum,missing,bank,bankEst,bankN,cardN,actual};
+  return {y,myr,myrN,estSum,missing,bank,bankEst,bankN,cardN,actual};
 }
 function balances(){
   const net={}; S.people.forEach(p=>net[p.id]=0);
@@ -634,35 +638,35 @@ function viewPlan(){
 
 function myBudget(){
   const me=myPerson(); if(!me) return null;
-  let yenShare=0,rmShare=0,paid=0;
+  let yenShare=0,rmShare=0,paid=0,paidRM=0;
   for(const e of S.expenses){
     const split=(e.split&&e.split.length?e.split:S.people.map(p=>p.id));
-    if(split.includes(me.id)){ yenShare+=(e.yen||0)/split.length; const b=basis(e); if(b!=null) rmShare+=b/split.length; }
-    if(e.paidBy===me.id) paid+=(e.yen||0);
+    if(split.includes(me.id)){ yenShare+=yenEq(e)/split.length; const b=basis(e); if(b!=null) rmShare+=b/split.length; }
+    if(e.paidBy===me.id){ paid+=yenEq(e); const b=basis(e); if(b!=null) paidRM+=b; }
   }
   const budget=Number(ls.get("budget_"+me.id,"186000"))||186000;
   const cur=ls.get("budgetCur_"+me.id,"JPY"), bRM=Number(ls.get("budgetRM_"+me.id,""))||0, bRate=Number(ls.get("budgetRate_"+me.id,""))||0;
   const start=Date.UTC(2026,11,20), end=Date.UTC(2027,0,4), t=Date.parse(todayJST());
   const daysIn=Math.max(0,Math.min(16,Math.floor((t-start)/864e5)+1));
-  return {me,yenShare,rmShare,paid,budget,daysIn,cur,bRM,bRate};
+  return {me,yenShare,rmShare,paid,paidRM,budget,daysIn,cur,bRM,bRate};
 }
 function viewSpend(){
   const T=totals(); const date=S.rateDate||todayJST(); const r=rateFor(date);
   const B=myBudget(); const tr=rateFor(todayJST());
   const {net,moves}=balances();
   const diff=T.bank-T.bankEst, pct=T.bankEst?diff/T.bankEst*100:0;
-  const cats={}; S.expenses.forEach(e=>{cats[e.cat||"Other"]=(cats[e.cat||"Other"]||0)+(e.yen||0)});
+  const cats={}; S.expenses.forEach(e=>{cats[e.cat||"Other"]=(cats[e.cat||"Other"]||0)+yenEq(e)});
   const maxc=Math.max(1,...Object.values(cats));
   const byDate={}; [...S.expenses].sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0)).forEach(e=>{(byDate[e.date]=byDate[e.date]||[]).push(e)});
   const list=Object.keys(byDate).length?Object.entries(byDate).map(([dt,arr])=>`
-    <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${yen(arr.reduce((s,e)=>s+(e.yen||0),0))}</span></div>
+    <div class="grouphead"><h3>${esc(fmtDate(dt))}</h3><span class="small muted num">${[arr.some(e=>!isRM(e))?yen(arr.filter(e=>!isRM(e)).reduce((s,e)=>s+(e.yen||0),0)):"",arr.some(isRM)?rm(arr.filter(isRM).reduce((s,e)=>s+(e.rm||0),0)):""].filter(Boolean).join(" + ")}</span></div>
     <div class="list">${arr.map(e=>{const v=est(e);return `
       <button class="li${W()?" tap":""}" ${W()?`data-exp="${esc(e.id)}"`:"disabled"}>
         <div class="main"><div class="ti">${esc(e.title||e.cat)}</div>
-          <div class="sub">${esc(e.cat||"Other")} · ${esc(pname(e.paidBy))} paid · ${e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
-          ${W()?`<div class="row" style="gap:6px;margin-top:6px">${e.method==="card"&&!(e.bank>0)?`<span class="tag" data-bankfocus>+ Add bank amount</span>`:""}<span class="tag" style="border-color:var(--line);color:var(--muted)">Edit / delete</span></div>`:""}
+          <div class="sub">${esc(e.cat||"Other")} · ${esc(pname(e.paidBy))} paid · ${isRM(e)?"Paid in RM":e.method==="cash"?"Cash":"Card"}${e.split&&e.split.length&&e.split.length<S.people.length?` · split ${e.split.length}`:""}</div>
+          ${W()?`<div class="row" style="gap:6px;margin-top:6px">${!isRM(e)&&e.method==="card"&&!(e.bank>0)?`<span class="tag" data-bankfocus>+ Add bank amount</span>`:""}<span class="tag" style="border-color:var(--line);color:var(--muted)">Edit / delete</span></div>`:""}
         </div>
-        <div class="amt">${yen(e.yen)}<small>${v==null?"Rate: not set":"Rate: "+rm(v)}${e.method==="card"?(e.bank>0?`<br>Bank: ${rm(e.bank)} <span class="${e.bank>v?"neg":"pos"}">${v?`(${e.bank>v?"+":""}${((e.bank-v)/v*100).toFixed(1)}%)`:""}</span>`:"<br>Bank: —"):""}</small></div>
+        <div class="amt">${isRM(e)?`${rm(e.rm||0)}<small>Charged in ringgit</small>`:`${yen(e.yen)}<small>${v==null?"Rate: not set":"Rate: "+rm(v)}${e.method==="card"?(e.bank>0?`<br>Bank: ${rm(e.bank)} <span class="${e.bank>v?"neg":"pos"}">${v?`(${e.bank>v?"+":""}${((e.bank-v)/v*100).toFixed(1)}%)`:""}</span>`:"<br>Bank: —"):""}</small>`}</div>
       </button>`}).join("")}</div>`).join(""):`<div class="empty">No spending yet. Add the first one with the button above.</div>`;
   const bpct=B?Math.min(100,B.yenShare/B.budget*100):0;
   return `
@@ -675,9 +679,9 @@ function viewSpend(){
         <dt>My share in ringgit (actual)</dt><dd>${rm(B.rmShare)}</dd>
         <dt>Left</dt><dd class="${B.budget-B.yenShare<0?"neg":""}">${yen(B.budget-B.yenShare)}${B.cur==="MYR"&&B.bRate?`<br><span class="small muted">≈ ${rm((B.budget-B.yenShare)*B.bRate/100)}</span>`:""}</dd>
         ${B.daysIn?`<dt>Per day so far (${B.daysIn} of 16 days)</dt><dd>${yen(B.yenShare/B.daysIn)}</dd><dt>Left per remaining day</dt><dd>${B.daysIn<16?yen((B.budget-B.yenShare)/(16-B.daysIn)):"—"}</dd>`:""}
-        <dt>I paid for the group</dt><dd>${yen(B.paid)}</dd>
+        <dt>I paid for the group</dt><dd>${rm(B.paidRM)}<br><span class="small muted">≈ ${yen(B.paid)}</span></dd>
       </dl>
-      <div class="hint">Your share of every expense you're split into. Only you see this, saved on this phone.</div>`
+      <div class="hint">Your share of every expense you're split into. Things paid in ringgit count at that day's rate. Only you see this, saved on this phone.</div>`
     :`<div class="muted small">Pick your name in the Trip tab (<strong>You → Pick</strong>) to see your own budget.</div>`}
   </div>
   <div class="card section">
@@ -686,7 +690,7 @@ function viewSpend(){
     <div class="hint">${tr?`At RM ${Number(tr.rate100).toFixed(3)} per ¥100 (${esc(fmtDate(tr.date))}). Your bank will add a little on top.`:"Save a rate below first."}</div>
   </div>
   <div class="section">
-    <div class="row" style="align-items:flex-end"><div><div class="eyebrow">Total spent (everyone)</div><div class="big num">${yen(T.y)}</div></div><div class="spacer"></div>${W()?`<button class="btn primary" data-act="addExp">+ Add</button>`:""}</div>
+    <div class="row" style="align-items:flex-end"><div><div class="eyebrow">Total spent (everyone)</div><div class="big num">${yen(T.y)}</div>${T.myrN?`<div class="small muted">+ ${rm(T.myr)} paid in ringgit (${T.myrN} item${T.myrN>1?"s":""})</div>`:""}</div><div class="spacer"></div>${W()?`<button class="btn primary" data-act="addExp">+ Add</button>`:""}</div>
     <div class="card"><dl class="kv">
       <dt>At the rate you saved each day</dt><dd>${rm(T.estSum)}</dd>
       <dt>Actual (bank charged where filled in, rate for the rest)</dt><dd>${rm(T.actual)}</dd>
@@ -702,7 +706,7 @@ function viewSpend(){
     <h3>Who owes who</h3>
     ${S.people.length?`<div class="card"><dl class="kv">${S.people.map(p=>`<dt>${esc(p.name)}</dt><dd class="${net[p.id]>0.005?"pos":net[p.id]<-0.005?"neg":""}">${net[p.id]>0.005?"gets back ":net[p.id]<-0.005?"owes ":""}${rm(Math.abs(net[p.id]||0))}</dd>`).join("")}</dl>
       ${moves.length?`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px" class="small">${moves.map(([a,b,v])=>`<div class="row" style="justify-content:space-between"><span><strong>${esc(pname(a))}</strong> pays <strong>${esc(pname(b))}</strong></span><span class="num" style="font-weight:600">${rm(v)}</span></div>`).join("")}</div>`:`<div class="small muted" style="margin-top:10px">All square.</div>`}
-      <div class="hint" style="margin-top:8px">Uses the bank amount when it's filled in, otherwise yen × the day's rate.</div></div>`:`<div class="empty">Add the people in the Trip tab to split costs.</div>`}
+      <div class="hint" style="margin-top:8px">Uses the ringgit amount for things charged in RM, the bank amount when it's filled in, otherwise yen × the day's rate.</div></div>`:`<div class="empty">Add the people in the Trip tab to split costs.</div>`}
   </div>
   ${Object.keys(cats).length?`<div class="section"><h3>By category</h3><div class="card">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div style="margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="small" style="font-weight:600">${esc(c)}</span><span class="small num muted">${yen(v)}</span></div><div class="bar"><i style="width:${(v/maxc*100).toFixed(1)}%"></i></div></div>`).join("")}</div></div>`:""}
   <div class="section"><h3>All spending</h3>${list}</div>`;
@@ -1077,13 +1081,14 @@ function expenseSheet(id,focusBank){
   const rr=rateFor(e.date); if(!id&&rr) e.rate100=rr.rate100;
   openSheet(id?"Edit spending":"Add spending",`
     <div class="f"><label for="eTitle">What</label><input id="eTitle" value="${esc(e.title)}" placeholder="e.g. Ichiran ramen"></div>
-    <div class="grid2"><div class="f"><label for="eYen">Amount (¥)</label><input id="eYen" inputmode="numeric" value="${esc(e.yen)}" placeholder="0"></div>
+    <div class="seg" role="group" id="eCur"><button type="button" data-v="JPY" aria-pressed="${!isRM(e)}">Paid in yen ¥</button><button type="button" data-v="MYR" aria-pressed="${isRM(e)}">Charged in ringgit RM</button></div>
+    <div class="grid2"><div class="f"><label for="eYen" id="eAmtLab">${isRM(e)?"Amount (RM)":"Amount (¥)"}</label><input id="eYen" inputmode="decimal" value="${esc(isRM(e)?(e.rm||""):e.yen)}" placeholder="0"></div>
       <div class="f"><label for="eDate">Date</label><input id="eDate" type="date" value="${esc(e.date)}"></div></div>
     <div class="f"><span class="lab">Category</span><div class="pick" id="eCat">${CATS.map(c=>`<button type="button" data-v="${c}" aria-pressed="${e.cat===c}">${c}</button>`).join("")}</div></div>
     <div class="grid2"><div class="f"><label for="ePaid">Paid by</label><select id="ePaid">${S.people.map(p=>`<option value="${esc(p.id)}" ${p.id===e.paidBy?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
       <div class="f"><span class="lab">Paid with</span><div class="pick" id="eMeth"><button type="button" data-v="card" aria-pressed="${e.method==="card"}">Card</button><button type="button" data-v="cash" aria-pressed="${e.method==="cash"}">Cash</button></div></div></div>
     <div class="f"><span class="lab">Split between</span><div class="pick" id="eSplit">${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${e.split.includes(p.id)}">${esc(p.name)}</button>`).join("")}</div></div>
-    <div class="grid2"><div class="f"><label for="eRate">Rate (RM per ¥100)</label><input id="eRate" inputmode="decimal" value="${esc(e.rate100)}" placeholder="e.g. 2.95"><span class="hint" id="eRateHint"></span></div>
+    <div class="grid2" id="eFx"><div class="f"><label for="eRate">Rate (RM per ¥100)</label><input id="eRate" inputmode="decimal" value="${esc(e.rate100)}" placeholder="e.g. 2.95"><span class="hint" id="eRateHint"></span></div>
       <div class="f" id="eBankWrap"><label for="eBank">Bank charged (RM)</label><input id="eBank" inputmode="decimal" value="${esc(e.bank||"")}" placeholder="Fill in later"><span class="hint">From your bank app.</span></div></div>
     <div class="card small" id="ePrev"></div>
     ${id?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="eDel">Delete</button></div>`:""}
@@ -1093,6 +1098,8 @@ function expenseSheet(id,focusBank){
     const num=v=>{const n=parseFloat(String(v).replace(/[^\d.]/g,""));return isFinite(n)?n:0};
     let rateTouched=!!id;
     const upd=()=>{
+      const cur=val("#eCur")[0]||"JPY"; $("#eFx",p).hidden=cur==="MYR"; $("#eAmtLab",p).textContent=cur==="MYR"?"Amount (RM)":"Amount (¥)";
+      if(cur==="MYR"){ const a=num($("#eYen",p).value), sp=val("#eSplit").length||1; $("#ePrev",p).innerHTML=a?`${rm(a)} charged in ringgit, no conversion<br><span class="muted">${rm(a/sp)} each for ${sp} ${sp>1?"people":"person"}</span>`:`<span class="muted">Enter the ringgit amount, e.g. a hotel or ticket you booked online</span>`; return; }
       const y=num($("#eYen",p).value), r=num($("#eRate",p).value), b=num($("#eBank",p).value), card=val("#eMeth")[0]==="card";
       $("#eBankWrap",p).hidden=!card;
       const ev=r?y*r/100:null; const sp=val("#eSplit").length||1;
@@ -1101,24 +1108,25 @@ function expenseSheet(id,focusBank){
     const syncRate=()=>{ const d=$("#eDate",p).value; const rr=rateFor(d); const h=$("#eRateHint",p);
       if(!rateTouched&&rr) $("#eRate",p).value=rr.rate100;
       h.textContent=rr?(rr.exact?"Saved rate for this day":"Using "+fmtDate(rr.date)+" rate"):"No rate saved yet"; upd(); };
-    pick("#eCat"); pick("#eMeth"); pick("#eSplit",true);
+    pick("#eCat"); pick("#eMeth"); pick("#eSplit",true); pick("#eCur");
     ["#eYen","#eBank"].forEach(s=>$(s,p).addEventListener("input",upd));
     $("#eRate",p).addEventListener("input",()=>{rateTouched=true;upd()});
     $("#eDate",p).addEventListener("change",syncRate);
     syncRate();
     if(focusBank) setTimeout(()=>{const b=$("#eBank",p); if(b){b.scrollIntoView({block:"center"}); b.focus({preventScroll:true});}},120);
     $("#eSave",p).onclick=async()=>{
-      const y=num($("#eYen",p).value); if(!y){toast("Enter the amount in yen");return}
+      const cur=val("#eCur")[0]||"JPY"; const y=num($("#eYen",p).value); if(!y){toast(cur==="MYR"?"Enter the amount in ringgit":"Enter the amount in yen");return}
       const split=val("#eSplit"); if(!split.length){toast("Pick at least one person to split with");return}
       const date=$("#eDate",p).value||todayJST(); const r=num($("#eRate",p).value); const method=val("#eMeth")[0]||"card";
-      const doc={title:$("#eTitle",p).value.trim(),yen:y,date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,rate100:r||null,bank:method==="card"?(num($("#eBank",p).value)||null):null,createdAt:e.createdAt||Date.now()};
+      const base={title:$("#eTitle",p).value.trim(),date,cat:val("#eCat")[0]||"Other",paidBy:$("#ePaid",p).value,split,method,createdAt:e.createdAt||Date.now()};
+      const doc=cur==="MYR"?{...base,cur:"MYR",rm:Math.round(y*100)/100,yen:null,rate100:null,bank:null}:{...base,cur:"JPY",yen:Math.round(y),rate100:r||null,bank:method==="card"?(num($("#eBank",p).value)||null):null};
       const ok=await write(async()=>{
         if(id) await S.db.doc("expenses/"+id).set(doc); else await S.db.collection("expenses").add(doc);
-        if(r&&!S.rates[date]) await S.db.doc("rates/"+date).set({rate100:r,source:"Entered with spending",setAt:Date.now()});
-      },id?"Saved":"Added",[id?"Edited spending":"Added spending",(doc.title||doc.cat)+" · "+yen(y)]);
+        if(cur!=="MYR"&&r&&!S.rates[date]) await S.db.doc("rates/"+date).set({rate100:r,source:"Entered with spending",setAt:Date.now()});
+      },id?"Saved":"Added",[id?"Edited spending":"Added spending",(doc.title||doc.cat)+" · "+amtLabel(doc)]);
       if(ok) closeSheet();
     };
-    if(id) twoStep($("#eDel",p),"Tap again to delete",async()=>{ if(await write(()=>S.db.doc("expenses/"+id).delete(),"Deleted",["Deleted spending",(e.title||e.cat)+" · "+yen(e.yen)])) closeSheet(); });
+    if(id) twoStep($("#eDel",p),"Tap again to delete",async()=>{ if(await write(()=>S.db.doc("expenses/"+id).delete(),"Deleted",["Deleted spending",(e.title||e.cat)+" · "+amtLabel(e)])) closeSheet(); });
   });
 }
 
