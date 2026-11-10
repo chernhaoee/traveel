@@ -513,13 +513,24 @@ function whoPicker(){
 }
 const ROLE_LABEL={admin:"Owner",planner:"Planner",traveler:"Traveler"};
 const role = () => !S.db?"Not signed in":(ROLE_LABEL[(S.member||{}).role]||"Traveler");
-function transportFor(d){
-  const [y,m,dd]=d.date.split("-").map(Number);
-  const key=new Date(Date.UTC(y,m-1,dd)).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
-  // Transport notes are keyed by date. When a date has more than one version, they belong to the original one (id = the date).
-  if(d.id!==d.date&&S.days.some(x=>x.id===d.date)) return null;
-  return S.notes.find(n=>n.group==="Transport"&&(n.title||"").startsWith(key+" "));
-}
+// "Getting around" lives on the day itself, so each version of a date has its own and follows its Who can see.
+const dayKey=date=>{ const [y,m,dd]=date.split("-").map(Number); return new Date(Date.UTC(y,m-1,dd)).toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"}); };
+const isDayNote=n=>n.group==="Transport"&&S.days.some(d=>(n.title||"").startsWith(dayKey(d.date)+" "));
+function transportFor(d){ const l=(d.transport||[]).filter(Boolean); return l.length?{lines:l}:null; }
+let migratingTr=false;
+async function migrateTransport(){ // one-off (Owner): move old dated Transport notes onto their day
+  if(migratingTr||!S.isOwner||!S.days.length) return; const by=new Map();
+  for(const n of S.notes){ if(n.group!=="Transport") continue;
+    const vs=S.days.filter(d=>(n.title||"").startsWith(dayKey(d.date)+" ")); if(!vs.length) continue;
+    const d=vs.find(x=>x.id===x.date)||vs.find(x=>!(x.visibleTo||[]).length)||vs[0];
+    if(!by.has(d.id)) by.set(d.id,{d,ns:[]}); by.get(d.id).ns.push(n); }
+  if(!by.size) return; migratingTr=true;
+  try{ const b=writeBatch(fs); let moved=0;
+    for(const {d,ns} of by.values()){ const cur=(d.transport||[]).filter(Boolean);
+      if(!cur.length){ b.update(doc(fs,"days/"+d.id),{transport:ns.flatMap(n=>n.lines||[])}); ns.forEach(n=>b.delete(doc(fs,"notes/"+n.id))); moved+=ns.length; }
+      else ns.filter(n=>(n.lines||[]).every(l=>cur.includes(l))).forEach(n=>{ b.delete(doc(fs,"notes/"+n.id)); moved++; }); }
+    if(moved) await write(()=>b.commit(),null,["Moved Getting around onto days",moved+" notes"]);
+  }catch(e){ console.warn("transport",e); } migratingTr=false; }
 function addressFor(hotel){ return (S.meta.addresses||[]).find(a=>hotel&&a.match&&hotel.includes(a.match)); }
 const isImg = w => (w.kind||"").startsWith("image");
 function canSeeDay(d){
@@ -1020,9 +1031,10 @@ function viewTodo(){
 }
 
 function viewNotes(){
-  const groups=[...new Set(S.notes.map(n=>n.group||"Heads-up"))];
+  const NS=S.notes.filter(n=>!isDayNote(n));
+  const groups=[...new Set(NS.map(n=>n.group||"Heads-up"))];
   if(!groups.includes(S.notesGroup)&&groups.length) S.notesGroup=groups[0];
-  const secs=S.notes.filter(n=>(n.group||"Heads-up")===S.notesGroup);
+  const secs=NS.filter(n=>(n.group||"Heads-up")===S.notesGroup);
   if(!S.notes.length) return S.ready?`<div class="empty">No notes yet.</div>`:`<div class="empty">Loading…</div>`;
   return `
   ${groups.length>1?`<div class="seg" role="group">${groups.map(g=>`<button data-ng="${esc(g)}" aria-pressed="${g===S.notesGroup}">${esc(g)}</button>`).join("")}</div>`:""}
@@ -1241,11 +1253,12 @@ function daySheet(){
       <div class="f"><label for="dHotel">Stay</label><input id="dHotel" value="${esc(d.hotel||"")}"></div></div>
     <div class="f"><label for="dDate">Date</label><input id="dDate" type="date" value="${esc(d.date)}"><span class="hint">Change it to move this whole day, stops and all, to another date.</span></div>
     <div class="f"><label for="dNotes">Day notes (one per line)</label><textarea id="dNotes" style="min-height:160px">${esc((d.notes||[]).join("\n"))}</textarea><span class="hint">Wrap words in **double stars** to bold them.</span></div>
+    <div class="f"><label for="dTr">Getting around (one per line)</label><textarea id="dTr" style="min-height:110px" placeholder="e.g. **Hotel → DisneySea** — JR Keiyō line 1 stop to Maihama, then the monorail">${esc((d.transport||[]).join("\n"))}</textarea></div>
     <button class="btn primary" id="dSave">Save</button>
     <div class="row" style="margin-top:6px"><div class="spacer"></div><button class="btn small danger" id="dDel">Delete this day</button></div>
     <div class="hint">Deleting removes the day and its ${(d.items||[]).length} stop${(d.items||[]).length===1?"":"s"}. Export first if you might want it back.</div>`,p=>{
     $("#dSave",p).onclick=async()=>{
-      const upd={title:$("#dTitle",p).value.trim(),city:$("#dCity",p).value.trim(),hotel:$("#dHotel",p).value.trim(),notes:$("#dNotes",p).value.split("\n").map(x=>x.trim()).filter(Boolean)};
+      const upd={title:$("#dTitle",p).value.trim(),city:$("#dCity",p).value.trim(),hotel:$("#dHotel",p).value.trim(),notes:$("#dNotes",p).value.split("\n").map(x=>x.trim()).filter(Boolean),transport:$("#dTr",p).value.split("\n").map(x=>x.trim()).filter(Boolean)};
       const nd=$("#dDate",p).value||d.date;
       if(nd!==d.date){
         const c=dayClash(nd,d.visibleTo,d.id); if(c){toast(c);return}
@@ -1695,7 +1708,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
     unsubs.push(q.onSnapshot(snap=>{cb(snap.docs.map(d=>({id:d.id,...d.data()}))); render(); },()=>{})); };
   let dataStarted=false;
   const startData=()=>{ if(dataStarted) return; dataStarted=true;
-    sub("days","order",v=>S.days=v); sub("notes","order",v=>S.notes=v); sub("tasks","order",v=>S.tasks=v);
+    sub("days","order",v=>S.days=v); sub("notes","order",v=>{S.notes=v; if(S.ready) migrateTransport();}); sub("tasks","order",v=>S.tasks=v);
     sub("people","order",v=>S.people=v); if(S.isOwner) sub("expenses",null,v=>S.expenses=v);
     else { const xp={}; const xm=()=>{ const m=new Map(); Object.values(xp).forEach(a=>a.forEach(x=>m.set(x.id,x))); S.expenses=[...m.values()]; render(); };
       const xq=(k,cons)=>unsubs.push(onSnapshot(query(collection(fs,"expenses"),...cons),sn=>{ xp[k]=sn.docs.map(d=>({id:d.id,...d.data()})); xm(); },e=>console.warn("expenses",k,e)));
@@ -1709,7 +1722,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
       if((S.member||{}).personId) wq("me",[where("vis","array-contains",S.member.personId)]); } sub("shopping","at",v=>S.shopping=v); sub("members",null,v=>S.members=v); sub("claims",null,v=>{S.claims=v; if(S.isOwner) backfillClaims();});
     if(S.isOwner) unsubs.push(S.db.collection("audit").orderBy("at","desc").limit(60).onSnapshot(snap=>{ S.audit=snap.docs.map(d=>({id:d.id,...d.data()})); render(); },()=>{}));
     if(S.isOwner) sub("invites","at",v=>S.invites=v,"desc");
-    setTimeout(()=>{S.ready=true; render(); setTimeout(()=>{ if(S.canWrite&&!S.rates[todayJST()]) autoRate(); },1500); },400);
+    setTimeout(()=>{S.ready=true; render(); setTimeout(()=>{ if(S.canWrite&&!S.rates[todayJST()]) autoRate(); migrateTransport(); },1500); },400);
   };
   const autoRate=async()=>{ const lr=await fetchLiveRate(); if(!lr) return; S.liveRate={rate100:lr.rate100,source:lr.source,date:lr.date}; render();
     // Planners/Owner save it as today's rate once a day, so spending and budgets use it without anyone tapping a button
