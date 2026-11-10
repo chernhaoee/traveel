@@ -803,7 +803,7 @@ function viewPlan(){
   return `${mvp}
   <div class="days" role="group" aria-label="Days">${strip}</div>
   <div class="dayhead${(()=>{ const w=wxForDay(d); return w&&!w.typical?" wx-"+w.kind:""; })()}">
-    <div class="eyebrow">Day ${idx+1} of ${S.days.length} · ${esc(fmtDate(d.date,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>
+    <div class="eyebrow">Day ${(()=>{ const ds=[...new Set(S.days.map(x=>x.date))].sort(); return (ds.indexOf(d.date)+1)+" of "+ds.length; })()} · ${esc(fmtDate(d.date,{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"}))}</div>
     <h2>${esc(d.title||d.city)}</h2>
     ${(()=>{ const w=wxForDay(d); if(!w) return ""; const city=w.city.replace(/^./,c=>c.toUpperCase());
       if(w.typical) return `<div class="small muted" style="margin:6px 0 4px">🗓️ Usually <strong>${Math.round(w.hi)}° / ${Math.round(w.lo)}°</strong> in ${esc(city)} around now · rain on ~${Math.round(w.wet*100)}% of days <span class="muted">· real forecast ~16 days before</span></div>`;
@@ -843,7 +843,7 @@ function fcSet(pid,v){ ls.set("fc_"+pid,JSON.stringify(v)); }
 function forecastCard(B){
   const me=myPerson(); if(!me||!B) return "";
   const F=fcGet(me.id), t=todayJST(), tr=rateFor(t), r=tr&&tr.rate100;
-  const daysLeft=S.days.filter(d=>d.date>=t).length;
+  const daysLeft=new Set(S.days.filter(d=>d.date>=t).map(d=>d.date)).size;
   const toB=y=>B.cur==="MYR"?(r?y*r/100:null):y; // ¥ → budget currency
   const shop=S.shopping.filter(x=>!x.done&&x.price>0&&shopTags(x).includes(me.id)).map(x=>({n:x.text,y:x.price/shopTags(x).length,shop:true}));
   const lines=[...shop,...(F.lines||[]).map((l,i)=>({...l,i}))];
@@ -1162,7 +1162,7 @@ function itemSheet(dayId,index,preset){
   const d=S.days.find(x=>x.id===dayId); const isNew=index==null; const it=isNew?{time:"",title:"",note:"",map:"",star:false,...preset}:{...d.items[index]};
   openSheet(isNew?"Add stop":"Edit stop",`
     <div class="grid2"><div class="f"><label for="iTime">Time</label><input id="iTime" value="${esc(it.time)}" placeholder="e.g. 10:00"></div>
-      <div class="f"><label for="iDay">Day</label><select id="iDay">${S.days.map(x=>`<option value="${esc(x.id)}" ${x.id===dayId?"selected":""}>${esc(fmtDate(x.date))} · ${esc(x.city)}</option>`).join("")}</select></div></div>
+      <div class="f"><label for="iDay">Day</label><select id="iDay">${S.days.filter(canSeeDay).map(x=>`<option value="${esc(x.id)}" ${x.id===dayId?"selected":""}>${esc(dayLabel(x))}</option>`).join("")}</select></div></div>
     <div class="f"><label for="iTitle">What</label><input id="iTitle" value="${esc(it.title)}" placeholder="e.g. Pokémon Center Shibuya"></div>
     <div class="f"><label for="iNote">Details</label><textarea id="iNote" placeholder="Tips, prices, what to see">${esc(it.note)}</textarea><span class="hint">Wrap words in **double stars** to bold them.</span></div>
     <div class="f"><label for="iMap">Google Maps search</label><input id="iMap" value="${esc(it.map)}" placeholder="Place name + area"><span class="hint">Leave empty for no map link.</span></div>
@@ -1203,6 +1203,14 @@ async function renumberDays(extra){ // keep days in date order; extra: [ [id, da
   const b=writeBatch(fs); (extra||[]).forEach(([id,v])=>v?b.set(doc(fs,"days/"+id),v):b.delete(doc(fs,"days/"+id)));
   [...ids].sort((a,c)=>(dateOf(a)||"").localeCompare(dateOf(c)||"")).forEach((id,i)=>{ const cur=S.days.find(d=>d.id===id); if(!cur||cur.order!==i+1) b.set(doc(fs,"days/"+id),{order:i+1},{merge:true}); });
   await b.commit(); }
+// Two versions of the same date are fine as long as nobody would see both.
+const dayAud=v=>new Set((v||[]).length?v:S.people.map(p=>p.id));
+function dayClash(date,vis,exceptId){ const a=dayAud(vis);
+  for(const x of S.days){ if(x.id===exceptId||x.date!==date) continue; const both=[...dayAud(x.visibleTo)].filter(id=>a.has(id));
+    if(both.length) return "There's already a "+fmtDate(date)+" that "+both.map(pname).join(", ")+" can see. "+(S.isOwner?"Use Who can see to give this one to the others.":"Ask the Owner to add another version."); }
+  return ""; }
+const newDayId=date=>S.days.some(x=>x.id===date)?date+"-"+uid().slice(0,4):date;
+const dayLabel=x=>fmtDate(x.date)+" · "+(x.city||"")+(S.days.some(y=>y!==x&&y.date===x.date)&&(x.visibleTo||[]).length?" (only "+x.visibleTo.map(pname).join(", ")+")":"");
 const addDays=(ds,n)=>{ const t=new Date(ds+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
 function addDaySheet(){
   const last=[...S.days].sort((a,b)=>a.date.localeCompare(b.date)).pop()||{};
@@ -1217,9 +1225,10 @@ function addDaySheet(){
     <button class="btn primary" id="nSave">Add day</button>`,p=>{ if(S.isOwner) dayVisWire(p);
     $("#nSave",p).onclick=async()=>{
       const date=$("#nDate",p).value; if(!date){toast("Pick a date");return}
-      if(S.days.some(d=>d.date===date||d.id===date)){toast("That date is already in the trip");return}
-      const v={date,city:$("#nCity",p).value.trim(),title:$("#nTitle",p).value.trim()||"Free day",hotel:$("#nHotel",p).value.trim(),items:[],notes:[],order:0,visibleTo:S.isOwner?dayVisRead(p):[]};
-      if(await write(()=>renumberDays([[date,v]]),"Day added",["Added a day",fmtDate(date)+": "+v.title])){ S.dayId=date; ls.set("day",date); closeSheet(); render(); }
+      const vis=S.isOwner?dayVisRead(p):[]; const c=dayClash(date,vis); if(c){toast(c);return}
+      const nid=newDayId(date);
+      const v={date,city:$("#nCity",p).value.trim(),title:$("#nTitle",p).value.trim()||"Free day",hotel:$("#nHotel",p).value.trim(),items:[],notes:[],order:0,visibleTo:vis};
+      if(await write(()=>renumberDays([[nid,v]]),"Day added",["Added a day",fmtDate(date)+": "+v.title])){ S.dayId=nid; ls.set("day",nid); closeSheet(); render(); }
     };
   });
 }
@@ -1238,9 +1247,9 @@ function daySheet(){
       const upd={title:$("#dTitle",p).value.trim(),city:$("#dCity",p).value.trim(),hotel:$("#dHotel",p).value.trim(),notes:$("#dNotes",p).value.split("\n").map(x=>x.trim()).filter(Boolean)};
       const nd=$("#dDate",p).value||d.date;
       if(nd!==d.date){
-        if(S.days.some(x=>x.id!==d.id&&(x.date===nd||x.id===nd))){toast("There's already a day on "+fmtDate(nd));return}
-        const {id,...rest}=d; const moved={...rest,...upd,date:nd};
-        if(await write(()=>renumberDays([[d.id,null],[nd,moved]]),"Moved to "+fmtDate(nd),["Moved a day",fmtDate(d.date)+" → "+fmtDate(nd)])){ S.dayId=nd; ls.set("day",nd); closeSheet(); render(); }
+        const c=dayClash(nd,d.visibleTo,d.id); if(c){toast(c);return}
+        const {id,...rest}=d; const moved={...rest,...upd,date:nd}; const nid=newDayId(nd);
+        if(await write(()=>renumberDays([[d.id,null],[nid,moved]]),"Moved to "+fmtDate(nd),["Moved a day",fmtDate(d.date)+" → "+fmtDate(nd)])){ S.dayId=nid; ls.set("day",nid); closeSheet(); render(); }
         return;
       }
       if(await write(()=>S.db.doc("days/"+d.id).update(upd),"Saved",["Edited day",fmtDate(d.date)+": "+upd.title])) closeSheet();
@@ -1414,7 +1423,7 @@ function dayVisSheet(){
     ${dayVisPicker(cur)}
     <div class="hint">This hides the day in the app screens. It's a privacy screen, not a lock: anyone in the trip could still get at it with technical know-how.</div>
     <button class="btn primary" id="vSave">Save</button>`,p=>{ dayVisWire(p);
-    $("#vSave",p).onclick=async()=>{ const v=dayVisRead(p);
+    $("#vSave",p).onclick=async()=>{ const v=dayVisRead(p); const c=dayClash(d.date,v,d.id); if(c){toast(c);return}
       if(await write(()=>S.db.doc("days/"+d.id).update({visibleTo:v}),v.length?"Only "+v.map(pname).join(", ")+" can see it":"Everyone can see it",["Changed who can see",fmtDate(d.date)+": "+(v.length?v.map(pname).join(", "):"everyone")])) closeSheet(); };
   });
 }
