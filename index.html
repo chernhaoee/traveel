@@ -188,6 +188,9 @@ details.note .ed{padding:0 14px 12px}
 .qr{background:#fff;padding:10px;border-radius:10px;width:max-content;max-width:100%;border:1px solid var(--line)}
 .qr img,.qr canvas{display:block;max-width:100%}
 .swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hue{-webkit-appearance:none;appearance:none;width:100%;height:28px;margin:10px 0 2px;border-radius:14px;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);outline:none}
+.hue::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:30px;height:30px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.35);cursor:pointer}
+.hue::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.35);cursor:pointer}
 .sw{width:30px;height:30px;border-radius:50%;border:2px solid var(--bg);box-shadow:0 0 0 1px var(--line);cursor:pointer}
 .sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--fg)}
 input[type=color]{width:44px;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:2px;cursor:pointer}
@@ -267,6 +270,10 @@ function mkDb(){
 }
 
 const CATS = ["Food","Transport","Shopping","Tickets","Stay","Other"];
+// Any colour = a hue at full saturation and brightness, so it's one slider.
+const hueHex=h=>{ const f=n=>{ const k=(n+h/60)%6; return Math.round(255*(1-Math.max(0,Math.min(k,4-k,1)))); }; return "#"+[f(5),f(3),f(1)].map(x=>x.toString(16).padStart(2,"0")).join(""); };
+const hexHue=hex=>{ const h=String(hex||"").replace("#",""); const [r,g,b]=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255); const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn; if(!d) return 0;
+  let x=mx===r?((g-b)/d)%6:mx===g?(b-r)/d+2:(r-g)/d+4; return Math.round((x*60+360)%360); };
 const PRESETS = ["#e0475b","#e8833a","#2f9e6b","#2b7bd6","#7a5af0","#5f6b7a"];
 const S = {db:null,user:null,sample:null,canWrite:true,ready:false,
   days:[],notes:[],tasks:[],people:[],expenses:[],rates:{},meta:{},wallet:[],audit:[],members:[],claims:[],invites:[],fileCache:{},liveRate:null,authChecked:false,authUser:null,ownerUid:undefined,member:undefined,invite:null,inviteRole:undefined,importing:false,shopping:[],todoView:"todo",shopMine:false,names:{},assets:null,cv:"",
@@ -299,9 +306,9 @@ async function write(fn,okMsg,log){
 
 /* ---------- theme ---------- */
 /* ---------- background animation ---------- */
-const FX_LIST=[["off","Off"],["weather","🌦 Match the weather"],["sakura","🌸 Sakura"],["daruma","Daruma"],["snow","❄️ Snow"],["leaves","🍁 Autumn leaves"]];
-const fxPick=()=>{ const v=ls.get("fx",""); if(v) return v; return (window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)?"off":"sakura"; };
-const fxKind=()=>{ const v=fxPick(); if(v!=="weather") return v; const w=wxForDay(S.days.find(d=>d.id===S.dayId)); const k=w&&!w.typical?w.kind:null; return k==="rain"||k==="storm"?"rain":k==="snow"?"snow":"sakura"; };
+const FX_LIST=[["off","Off"],["sakura","🌸 Sakura"],["daruma","Daruma"],["snow","❄️ Snow"],["leaves","🍁 Autumn leaves"]];
+const fxPick=()=>{ const v=ls.get("fx",""); if(v==="weather") return "sakura"; if(v) return v; return (window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)?"off":"sakura"; };
+const fxKind=()=>fxPick();
 const FX={kind:"off",parts:[],raf:0,w:0,h:0,dpr:1,last:0};
 function fxResize(){ const c=$("#fx"); if(!c) return; FX.dpr=Math.min(2,window.devicePixelRatio||1); FX.w=innerWidth; FX.h=innerHeight; c.width=FX.w*FX.dpr; c.height=FX.h*FX.dpr; }
 function fxNew(top){
@@ -406,7 +413,7 @@ function fxStart(){
   cancelAnimationFrame(FX.raf); FX.last=0; FX.kind=fxKind(); const c=$("#fx"); if(!c) return;
   fxResize(); const g=c.getContext("2d"); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,c.width,c.height);
   if(FX.kind==="off"){ FX.parts=[]; return; }
-  const n=Math.round(Math.min(FX.kind==="rain"?90:60,Math.max(FX.kind==="daruma"?10:18,FX.w*FX.h/(FX.kind==="snow"?9000:FX.kind==="rain"?5000:FX.kind==="daruma"?30000:16000))));
+  const n=Math.round(Math.min(30,Math.max(FX.kind==="daruma"?4:8,FX.w*FX.h/(FX.kind==="snow"?20000:FX.kind==="daruma"?70000:36000))));
   FX.parts=Array.from({length:n},()=>fxNew(false)); FX.raf=requestAnimationFrame(fxFrame);
 }
 addEventListener("resize",()=>{ if(FX.kind!=="off") fxResize(); });
@@ -793,7 +800,7 @@ async function wxFetch(city){ if(!city||WXbusy.has(city)||Date.now()-(WXfail[cit
           out.c={}; Object.entries(acc).forEach(([k,a])=>out.c[k]={hi:a.hi/a.n,lo:a.lo/a.n,wet:a.wet/a.n}); out.cAt=now; } }
       WX[city]=out; }
     try{ localStorage.setItem("wx:"+city,JSON.stringify(WX[city])); }catch(e){}
-    clearTimeout(wxTimer); wxTimer=setTimeout(()=>{ render(); if(fxPick()==="weather"&&fxKind()!==FX.kind) fxStart(); },120);
+    clearTimeout(wxTimer); wxTimer=setTimeout(()=>{ render(); },120);
   }catch(e){ WXfail[city]=Date.now(); } WXbusy.delete(city); }
 function wxForDay(d){ const city=wxCityOf(d); if(!city) return null; const w=wxLoad(city); if(!w) return null;
   const f=w.f&&w.f[d.date]; if(f) return {...wxCode(f.code),hi:f.hi,lo:f.lo,rain:f.rain,wind:f.wind,city};
@@ -1111,7 +1118,8 @@ function viewTrip(){
     <h3>Appearance</h3>
     <div class="seg" role="group" aria-label="Theme">${["system","light","dark"].map(t=>`<button data-theme-set="${t}" aria-pressed="${theme===t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("")}</div>
     <div class="lab">Accent colour</div>
-    <div class="swatches">${PRESETS.map(c=>`<button class="sw" style="background:${c}" data-accent="${c}" aria-label="Accent ${c}" aria-pressed="${acc.toLowerCase()===c}"></button>`).join("")}<input type="color" id="accentPick" value="${esc(acc)}" aria-label="Pick any colour"></div>
+    <div class="swatches">${PRESETS.map(c=>`<button class="sw" style="background:${c}" data-accent="${c}" aria-label="Accent ${c}" aria-pressed="${acc.toLowerCase()===c}"></button>`).join("")}</div>
+    <input type="range" class="hue" id="accentPick" min="0" max="359" value="${hexHue(acc)}" aria-label="Pick any colour">
     <div class="hint">Only on this phone. Lines, borders and buttons use it.</div>
     <div class="lab">Background animation</div>
     <div class="pick" role="group" aria-label="Background animation">${FX_LIST.map(([k,l])=>`<button type="button" data-fx="${k}" aria-pressed="${fxPick()===k}">${l}</button>`).join("")}</div>
@@ -1610,7 +1618,7 @@ document.addEventListener("click",async ev=>{
   if(t.closest("#roleChip")){ if(S.member){S.tab="trip";ls.set("tab","trip");render();window.scrollTo(0,0);} return; }
   const tab=t.closest("nav.tabs button"); if(tab){S.tab=tab.dataset.tab;ls.set("tab",S.tab);render();window.scrollTo(0,0);return}
   if(t.closest("#sheetRoot")) return;
-  const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render(); if(fxPick()==="weather"&&fxKind()!==FX.kind) fxStart(); return}
+  const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render(); return}
   const wpb=t.closest("[data-wp]"); if(wpb){ ev.preventDefault(); ev.stopPropagation(); wpSheet(wpb.dataset.wp,wpb.dataset.wpname); return; }
   if(t.closest(".mv")) return;
   const it=t.closest("[data-item]"); if(it&&W()){itemSheet(S.dayId,+it.dataset.item);return}
@@ -1724,9 +1732,9 @@ document.addEventListener("change",async ev=>{
   if(t.matches("[data-check]")){ const id=t.dataset.check; const v=t.checked; const ok=await write(()=>S.db.doc("tasks/"+id).update({done:v}),"",[v?"Ticked":"Unticked",(S.tasks.find(x=>x.id===id)||{}).text]); if(!ok) t.checked=!v; }
   if(t.id==="rateDate"){ S.rateDate=t.value||todayJST(); render(); }
   if(t.matches("[data-fc]")){ const me=myPerson(); if(me){ const F=fcGet(me.id); F[t.dataset.fc]=parseFloat(t.value.replace(/[^\d.]/g,""))||0; fcSet(me.id,F); render(); } }
-  if(t.id==="accentPick"){ ls.set("accent",t.value); applyTheme(); render(); }
+  if(t.id==="accentPick"){ ls.set("accent",hueHex(+t.value)); applyTheme(); render(); }
 });
-document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target.value.replace(/[^\d.]/g,""); const tr=rateFor(todayJST()); const o=$("#cvR"); if(o) o.textContent=(S.cv&&tr)?rm(parseFloat(S.cv)*tr.rate100/100):"RM —"; return; } if(ev.target.id==="accentPick"){ document.documentElement.style.setProperty("--accent",ev.target.value) } });
+document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target.value.replace(/[^\d.]/g,""); const tr=rateFor(todayJST()); const o=$("#cvR"); if(o) o.textContent=(S.cv&&tr)?rm(parseFloat(S.cv)*tr.rate100/100):"RM —"; return; } if(ev.target.id==="accentPick"){ document.documentElement.style.setProperty("--accent",hueHex(+ev.target.value)) } });
 
 /* ---------- boot ---------- */
 (function boot(){
