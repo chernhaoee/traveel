@@ -314,7 +314,7 @@ function fxResize(){ const c=$("#fx"); if(!c) return; FX.dpr=Math.min(2,window.d
 function fxNew(top){
   const k=FX.kind, r=Math.random, S2=fxSprites(), pick=a=>a[Math.floor(r()*a.length)];
   const base={x:r()*FX.w,y:top?-40-r()*FX.h*.2:r()*FX.h,rot:r()*6.28,vr:(r()-.5)*.03,ph:r()*6.28,sw:.4+r()*1.2,flip:r()*6.28,vf:.02+r()*.04};
-  if(k==="snow"){ const flake=r()<.12; return {...base,flake,s:flake?6+r()*6:1.5+r()*3,vy:flake?.3+r()*.45:.35+r()*.8,vx:(r()-.5)*.3,vr:flake?(r()-.5)*.012:0}; }
+  if(k==="snow"){ const flake=r()<.2; return {...base,flake,s:flake?6+r()*6:1.5+r()*3,vy:flake?.3+r()*.45:.35+r()*.8,vx:(r()-.5)*.3,vr:flake?(r()-.5)*.012:0}; }
   if(k==="rain") return {...base,s:10+r()*12,vy:7+r()*5,vx:-.8-r()*.6,sw:0,vr:0};
   if(k==="daruma") return {...base,img:r()<.8?S2.daruma[0]:S2.daruma[1],s:36+r()*12,vy:.45+r()*.5,vx:(r()-.5)*.2,vr:(r()-.5)*.02,vf:0};
   if(k==="leaves") return {...base,img:pick(S2.maples),s:28+r()*12,vy:.55+r()*.8,vx:(r()-.5)*.4};
@@ -417,7 +417,7 @@ function fxStart(){
   cancelAnimationFrame(FX.raf); FX.last=0; FX.kind=fxKind(); const c=$("#fx"); if(!c) return;
   fxResize(); const g=c.getContext("2d"); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,c.width,c.height);
   if(FX.kind==="off"){ FX.parts=[]; return; }
-  const n=Math.round(Math.min(FX.kind==="snow"?45:30,Math.max(FX.kind==="daruma"?4:8,FX.w*FX.h/(FX.kind==="snow"?11000:FX.kind==="daruma"?70000:36000))));
+  const n=Math.round(Math.min(30,Math.max(FX.kind==="daruma"?4:8,FX.w*FX.h/(FX.kind==="daruma"?70000:36000))));
   FX.parts=Array.from({length:n},()=>fxNew(false)); FX.raf=requestAnimationFrame(fxFrame);
 }
 addEventListener("resize",()=>{ if(FX.kind!=="off") fxResize(); });
