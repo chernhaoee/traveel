@@ -122,12 +122,13 @@ details.dn ul{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:colum
 /* timeline */
 .tl{display:flex;flex-direction:column}
 .it{display:grid;grid-template-columns:62px 1fr;gap:12px;text-align:left;background:none;border:0;padding:0;width:100%;cursor:default}
-.it.edit{cursor:pointer;grid-template-columns:62px 1fr 30px}
+.it.edit{cursor:pointer;grid-template-columns:62px 1fr 34px}
 .mv{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding-top:6px}
-.mv button{background:none;border:0;color:var(--faint);width:30px;height:26px;display:grid;place-items:center;cursor:pointer;border-radius:6px;padding:0}
+.mv button{background:none;border:0;color:var(--faint);display:grid;place-items:center;cursor:pointer;border-radius:6px;padding:0}
 .mv button:hover:not(:disabled){color:var(--accent);background:var(--accent-soft,rgba(229,72,77,.08))}
 .mv button:disabled{opacity:.25;cursor:default}
-.mv .grip{cursor:grab;touch-action:none;height:22px}
+.mv .grip{cursor:grab;touch-action:none;width:34px;height:44px}
+.mv .grip svg{width:16px;height:16px}
 .it.dragging{opacity:.9;background:var(--card,var(--bg));box-shadow:0 6px 20px rgba(0,0,0,.18);border-radius:10px;position:relative;z-index:5}
 .tl.dragmode .it:not(.dragging){transition:transform .12s}
 .it .t{font-size:12.5px;font-weight:600;color:var(--muted);padding-top:12px;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -820,7 +821,7 @@ function viewPlan(){
         ${it.note?`<div class="no">${rich(it.note)}</div>`:""}
         ${(it.star||it.map||f.length)?`<div class="meta">${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
       </div>
-      ${W()?`<div class="mv"><button type="button" data-mv="-1" aria-label="Move up" ${si===0?"disabled":""}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" class="grip" aria-label="Drag to move" title="Drag to move"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button><button type="button" data-mv="1" aria-label="Move down" ${si===shown.length-1?"disabled":""}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button></div>`:""}
+      ${W()?`<div class="mv"><button type="button" class="grip" aria-label="Drag to move" title="Drag to move"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button></div>`:""}
     </div>`}).join(""):`<div class="empty">Nothing planned for this day yet.</div>`;
   const planToggle=me&&tagged?`<div class="row" style="justify-content:space-between;margin-bottom:8px"><div class="seg" role="group" style="margin:0"><button data-planmine="1" aria-pressed="${mineOnly}">My plan</button><button data-planmine="0" aria-pressed="${!mineOnly}">Everyone's</button></div>${mineOnly&&hiddenN?`<span class="small muted">${hiddenN} stop${hiddenN>1?"s":""} for others hidden</span>`:""}</div>`:"";
   const notes=(d.notes||[]).filter(Boolean);
@@ -843,7 +844,7 @@ function viewPlan(){
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${planToggle}<div class="tl">${tl}</div>
-  ${W()?`<div class="hint">Tap a stop to edit or delete it. Use the arrows, or drag the dots, to change the order.</div><div class="row"><button class="btn plain" data-act="addItem">+ Add stop</button><button class="btn plain" data-act="editDay">Edit day</button><button class="btn plain" data-act="addDay">+ Add day</button></div>`:""}`;
+  ${W()?`<div class="hint">Tap a stop to edit or delete it. Hold the dots and drag to change the order.</div><div class="row"><button class="btn plain" data-act="addItem">+ Add stop</button><button class="btn plain" data-act="editDay">Edit day</button><button class="btn plain" data-act="addDay">+ Add day</button></div>`:""}`;
 }
 
 function myBudget(){
@@ -1613,8 +1614,6 @@ document.addEventListener("click",async ev=>{
   if(t.closest("#sheetRoot")) return;
   const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render(); if(fxPick()==="weather"&&fxKind()!==FX.kind) fxStart(); return}
   const wpb=t.closest("[data-wp]"); if(wpb){ ev.preventDefault(); ev.stopPropagation(); wpSheet(wpb.dataset.wp,wpb.dataset.wpname); return; }
-  const mvb=t.closest("[data-mv]"); if(mvb&&W()){ const rows=[...document.querySelectorAll(".tl [data-item]")].map(x=>+x.dataset.item); const cur=+mvb.closest("[data-item]").dataset.item; const k=rows.indexOf(cur), j=k+(+mvb.dataset.mv);
-    if(j>=0&&j<rows.length){ [rows[k],rows[j]]=[rows[j],rows[k]]; reorderStops(S.dayId,rows); } return; }
   if(t.closest(".mv")) return;
   const it=t.closest("[data-item]"); if(it&&W()){itemSheet(S.dayId,+it.dataset.item);return}
   const ex=t.closest("[data-exp]"); if(ex){expenseSheet(ex.dataset.exp,!!t.closest("[data-bankfocus]"));return}
