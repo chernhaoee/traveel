@@ -53,6 +53,8 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .fcbar i{display:block;height:100%}
 .fclegend{display:flex;flex-wrap:wrap;gap:4px 12px}.fclegend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid3 .f{margin:0}.grid3 input{width:100%;min-width:0}
+.forchip{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--fill);border:1px solid var(--line);color:var(--muted)}
+.it.other{opacity:.55}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
 .mvp .sub{color:#c9bde0;font-size:13px}
@@ -700,16 +702,21 @@ function viewPlan(){
   const d=V.find(x=>x.id===S.dayId), idx=S.days.indexOf(d);
   const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}</button>`).join("");
   const vis=(d.visibleTo||[]);
-  const items=(d.items||[]);
-  const tl=items.length?items.map((it,i)=>`
-    <div class="it${W()?" edit":""}" ${W()?`role="button" tabindex="0" data-item="${i}"`:""}>
+  const items=(d.items||[]); const me=myPerson();
+  const forOf=it=>Array.isArray(it.for)?it.for.filter(Boolean):[];
+  const tagged=items.some(it=>forOf(it).length); const mineOnly=!!me&&tagged&&S.planMine!==false;
+  const shown=items.map((it,i)=>[it,i]).filter(([it])=>!mineOnly||!forOf(it).length||forOf(it).includes(me.id));
+  const hiddenN=items.length-shown.length;
+  const tl=shown.length?shown.map(([it,i])=>{ const f=forOf(it), notMine=!!me&&f.length&&!f.includes(me.id); return `
+    <div class="it${W()?" edit":""}${notMine?" other":""}" ${W()?`role="button" tabindex="0" data-item="${i}"`:""}>
       <div class="t">${esc(it.time||"")}</div>
       <div class="b">
         <div class="ti">${esc(it.title||"Untitled")}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
         ${it.note?`<div class="no">${rich(it.note)}</div>`:""}
-        ${(it.star||it.map)?`<div class="meta">${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
+        ${(it.star||it.map||f.length)?`<div class="meta">${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
       </div>
-    </div>`).join(""):`<div class="empty">Nothing planned for this day yet.</div>`;
+    </div>`}).join(""):`<div class="empty">Nothing planned for this day yet.</div>`;
+  const planToggle=me&&tagged?`<div class="row" style="justify-content:space-between;margin-bottom:8px"><div class="seg" role="group" style="margin:0"><button data-planmine="1" aria-pressed="${mineOnly}">My plan</button><button data-planmine="0" aria-pressed="${!mineOnly}">Everyone's</button></div>${mineOnly&&hiddenN?`<span class="small muted">${hiddenN} stop${hiddenN>1?"s":""} for others hidden</span>`:""}</div>`:"";
   const notes=(d.notes||[]).filter(Boolean);
   const tr=transportFor(d); const ad=addressFor(d.hotel); const tix=S.wallet.filter(w=>w.day===d.date);
   const mvp=S.awards&&S.awards.revealedAt?mvpCard(S.awards,{owner:S.isOwner}):(S.isOwner&&todayJST()>=TRIP_END?`<div class="mvp"><h3>🏆 TRIP'S OVER</h3><div class="sub">Time to hand out the awards: Top Spender, The AFK and more.</div><div class="row" style="margin-top:12px"><button class="btn primary small" data-act="mvpPreview">See the MVPs</button></div></div>`:"");
@@ -723,7 +730,7 @@ function viewPlan(){
   ${(ad||tix.length)?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
-  <div class="tl">${tl}</div>
+  ${planToggle}<div class="tl">${tl}</div>
   ${W()?`<div class="hint">Tap any stop to edit, move or delete it.</div><div class="row"><button class="btn plain" data-act="addItem">+ Add stop</button><button class="btn plain" data-act="editDay">Edit day</button></div>`:""}`;
 }
 
@@ -1069,10 +1076,16 @@ function itemSheet(dayId,index,preset){
     <div class="f"><label for="iTitle">What</label><input id="iTitle" value="${esc(it.title)}" placeholder="e.g. Pokémon Center Shibuya"></div>
     <div class="f"><label for="iNote">Details</label><textarea id="iNote" placeholder="Tips, prices, what to see">${esc(it.note)}</textarea><span class="hint">Wrap words in **double stars** to bold them.</span></div>
     <div class="f"><label for="iMap">Google Maps search</label><input id="iMap" value="${esc(it.map)}" placeholder="Place name + area"><span class="hint">Leave empty for no map link.</span></div>
+    <div class="f"><span class="lab">Who's this for</span><div class="pick" id="iFor"><button type="button" data-v="" aria-pressed="${!(it.for||[]).length}">Everyone</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${(it.for||[]).includes(p.id)}">${esc(p.name)}</button>`).join("")}</div><span class="hint">Tag stops that only some of you do, e.g. two people still in Tokyo while the others are already in Kyoto. Everyone sees their own version of the day.</span></div>
     <label class="row small" style="font-weight:600"><input type="checkbox" id="iStar" ${it.star?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Low-crowd spot</label>
     ${isNew?"":`<div class="row"><button class="btn small plain" id="iUp" ${index===0?"disabled":""}>Move up</button><button class="btn small plain" id="iDown" ${index===d.items.length-1?"disabled":""}>Move down</button><div class="spacer"></div><button class="btn small danger" id="iDel">Delete</button></div>`}
     <button class="btn primary" id="iSave">${isNew?"Add to day":"Save"}</button>`,p=>{
-    const read=()=>({...it,id:it.id||uid(),time:$("#iTime",p).value.trim(),title:$("#iTitle",p).value.trim(),note:$("#iNote",p).value.trim(),map:$("#iMap",p).value.trim(),star:$("#iStar",p).checked});
+    $("#iFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return; const box=$("#iFor",p), e0=box.querySelector('[data-v=""]');
+      if(b===e0){ box.querySelectorAll("button").forEach(y=>y.setAttribute("aria-pressed",String(y===e0))); return; }
+      b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true"));
+      e0.setAttribute("aria-pressed",String(![...box.querySelectorAll('button:not([data-v=""])')].some(y=>y.getAttribute("aria-pressed")==="true"))); });
+    const readFor=()=>{ const f=[...$("#iFor",p).querySelectorAll('button[aria-pressed="true"]:not([data-v=""])')].map(b=>b.dataset.v); return f.length===S.people.length?[]:f; };
+    const read=()=>({...it,id:it.id||uid(),time:$("#iTime",p).value.trim(),title:$("#iTitle",p).value.trim(),note:$("#iNote",p).value.trim(),map:$("#iMap",p).value.trim(),star:$("#iStar",p).checked,for:readFor()});
     $("#iSave",p).onclick=async()=>{
       const v=read(); if(!v.title){toast("Add a name for the stop");return}
       const target=$("#iDay",p).value;
@@ -1429,6 +1442,7 @@ document.addEventListener("click",async ev=>{
   const sf=t.closest("[data-shopf]"); if(sf){ const v=sf.dataset.shopf; let F=[...(S.shopFilter||[])];
     if(!v) F=[]; else F=F.includes(v)?F.filter(x=>x!==v):[...F,v];
     S.shopFilter=F; ls.set("shopFilter",JSON.stringify(F)); render(); return; }
+  const pm=t.closest("[data-planmine]"); if(pm){ S.planMine=pm.dataset.planmine==="1"; ls.set("planMine",S.planMine?"1":"0"); render(); return; }
   const fd=t.closest("[data-fcdel]"); if(fd){ const me=myPerson(); if(me){ const F=fcGet(me.id); F.lines=(F.lines||[]).filter((_,i)=>i!==+fd.dataset.fcdel); fcSet(me.id,F); render(); } return; }
   const ph=t.closest("[data-photo]"); if(ph){ const x=S.shopping.find(y=>y.photo===ph.dataset.photo); if(ph.dataset.photo) photoSheet(ph.dataset.photo,ph.dataset.ptitle,x&&x.thumb); return; }
   const svb=t.closest("[data-spendview]"); if(svb){S.spendView=svb.dataset.spendview;ls.set("spendView",S.spendView);render();return}
@@ -1511,7 +1525,7 @@ document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target
 (function boot(){
   const h=(location.hash||"").slice(1);
   S.tab=["plan","spend","todo","notes","trip"].includes(h)?h:ls.get("tab","plan");
-  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); S.spendView=ls.get("spendView","mine"); try{ S.shopFilter=JSON.parse(ls.get("shopFilter","[]"))||[]; }catch(e){ S.shopFilter=[]; }
+  S.dayId=ls.get("day",null); S.todoView=ls.get("todoView","todo"); S.invRole=ls.get("invRole","traveler"); S.spendView=ls.get("spendView","mine"); S.planMine=ls.get("planMine","1")!=="0"; try{ S.shopFilter=JSON.parse(ls.get("shopFilter","[]"))||[]; }catch(e){ S.shopFilter=[]; }
   render(); setRole();
   const inv=new URLSearchParams(location.search).get("invite"); if(inv) S.invite=inv;
   if(!CONFIGURED){ render(); return; }
