@@ -776,7 +776,7 @@ function wxForDay(d){ const city=wxCityOf(d); if(!city) return null; const w=wxL
 const OUTDOOR=/bike|e-bike|park|falls|hike|beach|viewpoint|pagoda|fushimi|inari|arashiyama|bamboo|river|oishi|chureito|todoroki|valley|garden|cruise|ropeway|lake|shore|crossing|countdown|torii|walk/i;
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
-  if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
+  if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>${W()&&!S.days.length?`<button class="btn plain" data-act="addDay">+ Add the first day</button>`:""}`:`<div class="empty">Loading the plan…</div>`;
   if(!V.find(d=>d.id===S.dayId)){ const t=todayJST(); S.dayId=(V.find(d=>d.date===t)||V[0]).id; }
   const d=V.find(x=>x.id===S.dayId), idx=S.days.indexOf(d);
   const strip=V.map(x=>`<button class="day" data-day="${esc(x.id)}" aria-pressed="${x.id===S.dayId}"><span>${esc(fmtDate(x.date,{weekday:"short",timeZone:"UTC"}))}</span><b class="num">${esc(fmtDate(x.date,{day:"numeric",timeZone:"UTC"}))}</b><span>${esc(fmtDate(x.date,{month:"short",timeZone:"UTC"}))}</span>${(x.visibleTo||[]).length?`<span aria-label="restricted">🔒</span>`:""}${(()=>{ const w=wxForDay(x); wxFetch(wxCityOf(x)); return w?`<i class="wxmini${w.typical?" typ":""}" title="${esc(w.typical?"Typical for this date":w.label)}">${w.typical?"":w.icon}${Math.round(w.hi)}°</i>`:""; })()}</button>`).join("");
@@ -817,7 +817,7 @@ function viewPlan(){
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${planToggle}<div class="tl">${tl}</div>
-  ${W()?`<div class="hint">Tap any stop to edit, move or delete it.</div><div class="row"><button class="btn plain" data-act="addItem">+ Add stop</button><button class="btn plain" data-act="editDay">Edit day</button></div>`:""}`;
+  ${W()?`<div class="hint">Tap any stop to edit, move or delete it.</div><div class="row"><button class="btn plain" data-act="addItem">+ Add stop</button><button class="btn plain" data-act="editDay">Edit day</button><button class="btn plain" data-act="addDay">+ Add day</button></div>`:""}`;
 }
 
 function myBudget(){
@@ -1197,18 +1197,55 @@ function itemSheet(dayId,index,preset){
   });
 }
 
+async function renumberDays(extra){ // keep days in date order; extra: [ [id, data|null] ] written in the same batch
+  const ids=new Set(S.days.map(d=>d.id)); (extra||[]).forEach(([id,v])=>{ if(v) ids.add(id); else ids.delete(id); });
+  const dateOf=id=>{ const x=(extra||[]).find(([i])=>i===id); return x&&x[1]?x[1].date:(S.days.find(d=>d.id===id)||{}).date; };
+  const b=writeBatch(fs); (extra||[]).forEach(([id,v])=>v?b.set(doc(fs,"days/"+id),v):b.delete(doc(fs,"days/"+id)));
+  [...ids].sort((a,c)=>(dateOf(a)||"").localeCompare(dateOf(c)||"")).forEach((id,i)=>{ const cur=S.days.find(d=>d.id===id); if(!cur||cur.order!==i+1) b.set(doc(fs,"days/"+id),{order:i+1},{merge:true}); });
+  await b.commit(); }
+const addDays=(ds,n)=>{ const t=new Date(ds+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
+function addDaySheet(){
+  const last=[...S.days].sort((a,b)=>a.date.localeCompare(b.date)).pop()||{};
+  const def=last.date?addDays(last.date,1):todayJST();
+  openSheet("Add a day",`
+    <div class="grid2"><div class="f"><label for="nDate">Date</label><input id="nDate" type="date" value="${esc(def)}"></div>
+      <div class="f"><label for="nCity">City</label><input id="nCity" value="${esc(last.city?String(last.city).split("→").pop().trim():"")}" placeholder="e.g. Tokyo"></div></div>
+    <div class="f"><label for="nTitle">Day title</label><input id="nTitle" placeholder="e.g. Free day in Tokyo"></div>
+    <div class="f"><label for="nHotel">Stay</label><input id="nHotel" value="${esc(last.hotel||"")}"></div>
+    <div class="hint">Add a day before, after or in the middle of the trip. It slots into date order automatically. Then add stops to it.</div>
+    <button class="btn primary" id="nSave">Add day</button>`,p=>{
+    $("#nSave",p).onclick=async()=>{
+      const date=$("#nDate",p).value; if(!date){toast("Pick a date");return}
+      if(S.days.some(d=>d.date===date||d.id===date)){toast("That date is already in the trip");return}
+      const v={date,city:$("#nCity",p).value.trim(),title:$("#nTitle",p).value.trim()||"Free day",hotel:$("#nHotel",p).value.trim(),items:[],notes:[],order:0};
+      if(await write(()=>renumberDays([[date,v]]),"Day added",["Added a day",fmtDate(date)+": "+v.title])){ S.dayId=date; ls.set("day",date); closeSheet(); render(); }
+    };
+  });
+}
 function daySheet(){
   const d=S.days.find(x=>x.id===S.dayId);
   openSheet("Edit "+fmtDate(d.date),`
     <div class="f"><label for="dTitle">Day title</label><input id="dTitle" value="${esc(d.title||"")}"></div>
     <div class="grid2"><div class="f"><label for="dCity">City</label><input id="dCity" value="${esc(d.city||"")}"></div>
       <div class="f"><label for="dHotel">Stay</label><input id="dHotel" value="${esc(d.hotel||"")}"></div></div>
+    <div class="f"><label for="dDate">Date</label><input id="dDate" type="date" value="${esc(d.date)}"><span class="hint">Change it to move this whole day, stops and all, to another date.</span></div>
     <div class="f"><label for="dNotes">Day notes (one per line)</label><textarea id="dNotes" style="min-height:160px">${esc((d.notes||[]).join("\n"))}</textarea><span class="hint">Wrap words in **double stars** to bold them.</span></div>
-    <button class="btn primary" id="dSave">Save</button>`,p=>{
+    <button class="btn primary" id="dSave">Save</button>
+    <div class="row" style="margin-top:6px"><div class="spacer"></div><button class="btn small danger" id="dDel">Delete this day</button></div>
+    <div class="hint">Deleting removes the day and its ${(d.items||[]).length} stop${(d.items||[]).length===1?"":"s"}. Export first if you might want it back.</div>`,p=>{
     $("#dSave",p).onclick=async()=>{
-      const doc={title:$("#dTitle",p).value.trim(),city:$("#dCity",p).value.trim(),hotel:$("#dHotel",p).value.trim(),notes:$("#dNotes",p).value.split("\n").map(x=>x.trim()).filter(Boolean)};
-      if(await write(()=>S.db.doc("days/"+d.id).update(doc),"Saved",["Edited day",fmtDate(d.date)+": "+doc.title])) closeSheet();
+      const upd={title:$("#dTitle",p).value.trim(),city:$("#dCity",p).value.trim(),hotel:$("#dHotel",p).value.trim(),notes:$("#dNotes",p).value.split("\n").map(x=>x.trim()).filter(Boolean)};
+      const nd=$("#dDate",p).value||d.date;
+      if(nd!==d.date){
+        if(S.days.some(x=>x.id!==d.id&&(x.date===nd||x.id===nd))){toast("There's already a day on "+fmtDate(nd));return}
+        const {id,...rest}=d; const moved={...rest,...upd,date:nd};
+        if(await write(()=>renumberDays([[d.id,null],[nd,moved]]),"Moved to "+fmtDate(nd),["Moved a day",fmtDate(d.date)+" → "+fmtDate(nd)])){ S.dayId=nd; ls.set("day",nd); closeSheet(); render(); }
+        return;
+      }
+      if(await write(()=>S.db.doc("days/"+d.id).update(upd),"Saved",["Edited day",fmtDate(d.date)+": "+upd.title])) closeSheet();
     };
+    twoStep($("#dDel",p),"Tap again to delete the day",async()=>{
+      if(await write(()=>renumberDays([[d.id,null]]),"Day deleted",["Deleted a day",fmtDate(d.date)+": "+(d.title||d.city||"")])){ S.dayId=null; closeSheet(); render(); } });
   });
 }
 function ago(t){ if(!t) return ""; const s=(Date.now()-t)/1000; if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+" min ago"; if(s<86400) return Math.floor(s/3600)+" h ago"; return new Date(t).toLocaleDateString("en-GB",{day:"numeric",month:"short"}); }
@@ -1554,6 +1591,7 @@ document.addEventListener("click",async ev=>{
     case "addItem": itemSheet(S.dayId,null); break;
     case "dayVis": dayVisSheet(); break;
     case "editDay": daySheet(); break;
+    case "addDay": addDaySheet(); break;
     case "addShop": shopSheet(null); break;
     case "addWallet": if(S.canWrite) walletAdd(); break;
     case "editBudget": budgetSheet(); break;
