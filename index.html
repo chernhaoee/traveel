@@ -1710,9 +1710,9 @@ document.addEventListener("pointerdown",ev=>{
   const place=()=>{ const dy=lastY+sy()-y0; row.style.transform=`translateY(${dy}px)`; const mid=tops[start].c+dy;
     to=tops.filter((t,k)=>k!==start&&t.c<mid).length;
     rows.forEach((r,k)=>{ if(k===start) return; r.style.transform=(start<to&&k>start&&k<=to)?`translateY(${-h}px)`:(to<start&&k>=to&&k<start)?`translateY(${h}px)`:""; }); };
-  // Auto-scroll near the screen edges: deeper into the edge = faster. Never scrolls past the start or end of the day's stops.
+  // Auto-scroll near the screen edges: deeper into the edge = faster. Downward stops at the last stop.
   const edge=()=>{ const v=window.innerHeight, Z=140, r=tl.getBoundingClientRect(); let sp=0;
-    if(lastY<Z&&r.top<Z*0.6){ const k=Math.min(1,(Z-lastY)/Z); sp=-(2+22*k*k); }
+    if(lastY<Z){ const k=Math.min(1,(Z-lastY)/Z); sp=-(2+22*k*k); }
     else if(lastY>v-Z&&r.bottom>v-Z*0.6){ const k=Math.min(1,(lastY-(v-Z))/Z); sp=2+22*k*k; }
     if(sp){ window.scrollBy(0,Math.round(sp)); place(); raf=requestAnimationFrame(edge);} else raf=0; };
   const move=e=>{ lastY=e.clientY; place(); if(!raf) raf=requestAnimationFrame(edge); };
