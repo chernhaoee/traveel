@@ -56,7 +56,6 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .forchip{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--fill);border:1px solid var(--line);color:var(--muted)}
 .it.other{opacity:.55}
 .wpname{text-decoration:underline dotted;text-decoration-color:var(--accent);text-underline-offset:3px;text-decoration-thickness:2px;cursor:zoom-in}
-.wpname.plain{text-decoration-color:var(--line)}
 .wpic{font-size:12px;margin-left:5px;opacity:.8;text-decoration:none;display:inline-block}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
@@ -747,7 +746,7 @@ function viewPlan(){
       <div class="t">${esc(it.time||"")}</div>
       <div class="b">
         <div class="ti">${(()=>{ const q=(it.map||"").trim(); const h=q?wpGet(q):null; if(q&&h===undefined) setTimeout(()=>wpLookup(q),0);
-          return q&&h!==undefined?`<span class="wpname${h.none?" plain":""}" role="button" tabindex="0" data-wp="${esc(q)}" data-wpname="${esc(it.title||"")}">${esc(it.title||"Untitled")}${h.none?"":`<span class="wpic" aria-hidden="true">🖼</span>`}</span>`:esc(it.title||"Untitled"); })()}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
+          return h&&!h.none?`<span class="wpname" role="button" tabindex="0" data-wp="${esc(q)}" data-wpname="${esc(it.title||"")}">${esc(it.title||"Untitled")}<span class="wpic" aria-hidden="true">🖼</span></span>`:esc(it.title||"Untitled"); })()}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
         ${it.note?`<div class="no">${rich(it.note)}</div>`:""}
         ${(it.star||it.map||f.length)?`<div class="meta">${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
       </div>
