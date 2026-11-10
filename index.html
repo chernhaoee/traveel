@@ -55,6 +55,8 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid3 .f{margin:0}.grid3 input{width:100%;min-width:0}
 .forchip{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--fill);border:1px solid var(--line);color:var(--muted)}
 .it.other{opacity:.55}
+.wpname{text-decoration:underline dotted;text-decoration-color:var(--accent);text-underline-offset:3px;text-decoration-thickness:2px;cursor:zoom-in}
+.wpic{font-size:12px;margin-left:5px;opacity:.8;text-decoration:none;display:inline-block}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
 .mvp .sub{color:#c9bde0;font-size:13px}
@@ -695,6 +697,30 @@ function mvpCard(A,opts){ opts=opts||{};
 async function mvpPreview(){ const list=await computeAwards(); S.mvpDraft={list};
   openSheet("Trip MVPs (only you can see this)",`${mvpCard({list})}<div class="hint">Worked out from spending, tickets and the activity log. Reveal it and everyone sees it at the top of the Plan tab.</div><button class="btn primary" id="mvpGo">Reveal to everyone 🏆</button>`,p=>{
     $("#mvpGo",p).onclick=async()=>{ if(await write(()=>setDoc(doc(fs,"meta/awards"),{list,revealedAt:Date.now(),by:S.myId}),"MVPs revealed 🏆",["Revealed the trip MVPs",list.length+" awards"])){ closeSheet(); S.tab="plan"; render(); window.scrollTo(0,0); } }; }); }
+/* ---------- place previews (Wikipedia, cached on this phone) ---------- */
+const WP={}, WPbusy=new Set(); let wpTimer=null;
+// Words that don't identify a place on their own (cities, "station", food types, chains), so a match on them alone doesn't count
+const WP_GENERIC=new Set("tokyo kyoto osaka japan fujikawaguchiko yamanashi station stn street area city ward district near the and with from for reserve daypack night exploring workshop coin ring sushi ramen cafe restaurant shop store lawson familymart eleven".split(" "));
+const wpNorm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+function wpGet(q){ if(q in WP) return WP[q]; try{ const v=localStorage.getItem("wp:"+q); if(v){ WP[q]=JSON.parse(v); return WP[q]; } }catch(e){} return undefined; }
+function wpMatch(q,title){ const qs=wpNorm(q).split(/[^a-z0-9]+/).filter(Boolean), ts=wpNorm(title).replace(/[^a-z0-9]/g,"");
+  const strong=qs.filter(w=>w.length>=4&&!WP_GENERIC.has(w));
+  if(strong.length) return strong.some(w=>ts.includes(w));
+  return wpNorm(q).replace(/[^a-z0-9]/g,"")===ts; }
+async function wpLookup(q){ if(!q||WPbusy.has(q)||wpGet(q)!==undefined) return; WPbusy.add(q);
+  try{ const u="https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&generator=search&gsrlimit=1&gsrsearch="+encodeURIComponent(q)+"&prop=pageimages%7Cextracts%7Cinfo&inprop=url&exintro=1&explaintext=1&exsentences=3&piprop=thumbnail&pithumbsize=800";
+    const j=await (await fetch(u)).json(); const pg=j&&j.query&&j.query.pages?Object.values(j.query.pages)[0]:null;
+    const hit=pg&&pg.thumbnail&&wpMatch(q,pg.title)?{t:pg.title,img:pg.thumbnail.source,x:(pg.extract||"").trim(),url:pg.fullurl}:{none:1};
+    WP[q]=hit; try{ localStorage.setItem("wp:"+q,JSON.stringify(hit)); }catch(e){}
+    if(!hit.none){ clearTimeout(wpTimer); wpTimer=setTimeout(render,150); }
+  }catch(e){ /* offline: try again next time */ }
+  WPbusy.delete(q); }
+function wpSheet(q,name){ const h=wpGet(q); if(!h||h.none) return;
+  openSheet(name||h.t,`<img src="${esc(h.img)}" alt="${esc(h.t)}" style="width:100%;max-height:52vh;object-fit:cover;border-radius:14px;background:var(--fill)">
+    <div style="margin-top:10px;font-weight:700">${esc(h.t)}</div>
+    <div class="small" style="margin-top:4px;line-height:1.5">${esc(h.x)}</div>
+    <div class="row" style="margin-top:12px"><a class="btn small" href="${esc(mapUrl(q))}" target="_blank" rel="noopener">Open in Google Maps</a><a class="btn small plain" href="${esc(h.url)}" target="_blank" rel="noopener">Wikipedia ↗</a></div>
+    <div class="hint">Photo and text from Wikipedia.</div>`); }
 function viewPlan(){
   const V=S.days.filter(canSeeDay);
   if(!V.length) return S.ready?`<div class="empty">${S.days.length?"No days shared with you yet.":"The trip hasn't been loaded yet. Once the Owner loads the trip data, the plan shows up here."}</div>`:`<div class="empty">Loading the plan…</div>`;
@@ -711,7 +737,8 @@ function viewPlan(){
     <div class="it${W()?" edit":""}${notMine?" other":""}" ${W()?`role="button" tabindex="0" data-item="${i}"`:""}>
       <div class="t">${esc(it.time||"")}</div>
       <div class="b">
-        <div class="ti">${esc(it.title||"Untitled")}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
+        <div class="ti">${(()=>{ const q=(it.map||"").trim(); const h=q?wpGet(q):null; if(q&&h===undefined) setTimeout(()=>wpLookup(q),0);
+          return h&&!h.none?`<span class="wpname" role="button" tabindex="0" data-wp="${esc(q)}" data-wpname="${esc(it.title||"")}">${esc(it.title||"Untitled")}<span class="wpic" aria-hidden="true">🖼</span></span>`:esc(it.title||"Untitled"); })()}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
         ${it.note?`<div class="no">${rich(it.note)}</div>`:""}
         ${(it.star||it.map||f.length)?`<div class="meta">${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
       </div>
@@ -1429,6 +1456,7 @@ document.addEventListener("click",async ev=>{
   const tab=t.closest("nav.tabs button"); if(tab){S.tab=tab.dataset.tab;ls.set("tab",S.tab);render();window.scrollTo(0,0);return}
   if(t.closest("#sheetRoot")) return;
   const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render();return}
+  const wpb=t.closest("[data-wp]"); if(wpb){ ev.preventDefault(); ev.stopPropagation(); wpSheet(wpb.dataset.wp,wpb.dataset.wpname); return; }
   const it=t.closest("[data-item]"); if(it&&W()){itemSheet(S.dayId,+it.dataset.item);return}
   const ex=t.closest("[data-exp]"); if(ex){expenseSheet(ex.dataset.exp,!!t.closest("[data-bankfocus]"));return}
   const tk=t.closest("[data-task]"); if(tk){taskSheet(tk.dataset.task);return}
