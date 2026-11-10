@@ -49,6 +49,10 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .chip.soft{border-color:var(--line);color:var(--muted)}
 .sthumb{flex:none;width:44px;height:44px;border-radius:10px;overflow:hidden;border:1px solid var(--line);padding:0;background:var(--fill);cursor:zoom-in}
 .sthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.fcbar{display:flex;height:10px;border-radius:6px;overflow:hidden;background:var(--fill);margin:10px 0 6px}
+.fcbar i{display:block;height:100%}
+.fclegend{display:flex;flex-wrap:wrap;gap:4px 12px}.fclegend b{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid3 .f{margin:0}.grid3 input{width:100%;min-width:0}
 .mvp{background:linear-gradient(145deg,#1b1530,#2e1a3f 55%,#41203b);color:#f5f1ff;border:1px solid #5b3d6b;border-radius:18px;padding:16px;margin-bottom:16px;overflow:hidden}
 .mvp h3{color:#f3c969;letter-spacing:.14em;margin:0 0 2px}
 .mvp .sub{color:#c9bde0;font-size:13px}
@@ -740,6 +744,37 @@ function myBudget(){
   const daysIn=Math.max(0,Math.min(16,Math.floor((t-start)/864e5)+1));
   return {me,yenShare,rmShare,paid,paidRM,budget,spent,fmt,daysIn,cur,bRM,bRate};
 }
+/* ---------- forecast ---------- */
+function fcGet(pid){ try{ return Object.assign({food:3000,trans:1000,misc:1000,lines:[]},JSON.parse(ls.get("fc_"+pid,"{}"))||{}); }catch(e){ return {food:3000,trans:1000,misc:1000,lines:[]}; } }
+function fcSet(pid,v){ ls.set("fc_"+pid,JSON.stringify(v)); }
+function forecastCard(B){
+  const me=myPerson(); if(!me||!B) return "";
+  const F=fcGet(me.id), t=todayJST(), tr=rateFor(t), r=tr&&tr.rate100;
+  const daysLeft=S.days.filter(d=>d.date>=t).length;
+  const toB=y=>B.cur==="MYR"?(r?y*r/100:null):y; // ¥ → budget currency
+  const shop=S.shopping.filter(x=>!x.done&&x.price>0&&shopTags(x).includes(me.id)).map(x=>({n:x.text,y:x.price/shopTags(x).length,shop:true}));
+  const lines=[...shop,...(F.lines||[]).map((l,i)=>({...l,i}))];
+  const dailyY=(+F.food||0)+(+F.trans||0)+(+F.misc||0), dailyTot=dailyY*daysLeft, plannedY=lines.reduce((a,l)=>a+(+l.y||0),0);
+  const futureB=toB(dailyTot+plannedY); if(futureB==null) return `<div class="card section"><h3>Forecast</h3><div class="muted small">Needs today's exchange rate. It loads automatically when you're online.</div></div>`;
+  const proj=B.spent+futureB, diff=B.budget-proj;
+  const room=B.budget-B.spent-toB(plannedY), perDayY=daysLeft?(B.cur==="MYR"?(room/r*100):room)/daysLeft:0;
+  const seg=(v,c)=>`<i style="width:${Math.max(0,Math.min(100,v/Math.max(B.budget,proj)*100)).toFixed(1)}%;background:${c}"></i>`;
+  const inp=(k,lab)=>`<div class="f"><label for="fc_${k}">${lab}</label><input id="fc_${k}" data-fc="${k}" inputmode="numeric" value="${esc(F[k]||"")}" placeholder="0"></div>`;
+  return `<div class="card section">
+    <div class="row"><h3>Forecast</h3><div class="spacer"></div><span class="small muted">${daysLeft} day${daysLeft===1?"":"s"} left</span></div>
+    <div><span class="big num" style="font-size:24px">${B.fmt(proj)}</span> <span class="muted">by the end of the trip</span></div>
+    <div class="small ${diff<0?"neg":"pos"}" style="font-weight:600">${diff<0?`Over budget by ${B.fmt(-diff)}`:`Under budget, ${B.fmt(diff)} to spare`}</div>
+    <div class="fcbar">${seg(B.spent,"var(--accent)")}${seg(toB(plannedY),"#e8a33d")}${seg(toB(dailyTot),"#7aa7e0")}</div>
+    <div class="small muted fclegend"><span><b style="background:var(--accent)"></b>Spent ${B.fmt(B.spent)}</span><span><b style="background:#e8a33d"></b>Planned ${B.fmt(toB(plannedY))}</span><span><b style="background:#7aa7e0"></b>Day-to-day ${B.fmt(toB(dailyTot))}</span></div>
+    <div class="lab" style="margin-top:12px">Per day (¥)</div>
+    <div class="grid3">${inp("food","Meals")}${inp("trans","Trains & buses")}${inp("misc","Snacks & misc")}</div>
+    <div class="small muted">${yen(dailyY)}/day × ${daysLeft} days = ${yen(dailyTot)}${B.cur==="MYR"?` ≈ ${rm(toB(dailyTot))}`:""}</div>
+    <div class="lab" style="margin-top:12px">Planned (my share, ¥)</div>
+    ${lines.length?`<div>${lines.map(l=>`<div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)"><span class="small">${l.shop?"🛍️ ":""}${esc(l.n)}${l.shop?` <span class="muted">(shopping list)</span>`:""}</span><span class="row" style="gap:8px"><span class="num small">${yen(l.y)}</span>${l.shop?"":`<button class="btn small plain" data-fcdel="${l.i}" aria-label="Remove ${esc(l.n)}">✕</button>`}</span></div>`).join("")}</div>`:`<div class="small muted">Nothing planned yet.</div>`}
+    <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="fcN" placeholder="e.g. Kimono rental" style="flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:10px;padding:9px 12px;font:inherit"><input id="fcY" inputmode="numeric" placeholder="¥" style="width:90px;border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:10px;padding:9px 12px;font:inherit"><button class="btn small" data-act="fcAdd">Add</button></div>
+    <div class="hint">${daysLeft&&diff<0?`To stay within budget: keep day-to-day under <strong>${perDayY>0?yen(perDayY):"¥0"}/day</strong>${B.cur==="MYR"&&perDayY>0?` (≈ ${rm(perDayY*r/100)})`:""}, or trim the planned list.`:daysLeft?`You could spend up to <strong>${yen(perDayY)}/day</strong> and still land on budget.`:""} Shopping-list items tagged for you (with a price, not yet bought) are counted automatically; remove what you've already logged as spending. Saved on this phone only.</div>
+  </div>`;
+}
 function viewMine(){
   const me=myPerson(); if(!me) return "";
   const mineE=S.expenses.filter(e=>splitOf(e).includes(me.id)||(e.treat&&e.paidBy===me.id));
@@ -814,6 +849,7 @@ function viewSpend(){
       <div class="hint">Your share of every expense you're split into, e.g. a RM 4,000 stay split 4 ways takes RM 1,000 off. ${B.cur==="MYR"?"Yen spending counts at that day's rate (or your bank amount when filled in).":"Ringgit spending counts at that day's rate."} Only you see this, saved on this phone.</div>`
     :`<div class="muted small">Pick your name in the Trip tab (<strong>You → Pick</strong>) to see your own budget.</div>`}
   </div>
+  ${B?forecastCard(B):""}
 `:""}
   <div class="card section">
     <h3>Quick convert</h3>
@@ -1393,6 +1429,7 @@ document.addEventListener("click",async ev=>{
   const sf=t.closest("[data-shopf]"); if(sf){ const v=sf.dataset.shopf; let F=[...(S.shopFilter||[])];
     if(!v) F=[]; else F=F.includes(v)?F.filter(x=>x!==v):[...F,v];
     S.shopFilter=F; ls.set("shopFilter",JSON.stringify(F)); render(); return; }
+  const fd=t.closest("[data-fcdel]"); if(fd){ const me=myPerson(); if(me){ const F=fcGet(me.id); F.lines=(F.lines||[]).filter((_,i)=>i!==+fd.dataset.fcdel); fcSet(me.id,F); render(); } return; }
   const ph=t.closest("[data-photo]"); if(ph){ const x=S.shopping.find(y=>y.photo===ph.dataset.photo); if(ph.dataset.photo) photoSheet(ph.dataset.photo,ph.dataset.ptitle,x&&x.thumb); return; }
   const svb=t.closest("[data-spendview]"); if(svb){S.spendView=svb.dataset.spendview;ls.set("spendView",S.spendView);render();return}
   const ivr=t.closest("[data-invrole]"); if(ivr){S.invRole=ivr.dataset.invrole;ls.set("invRole",S.invRole);render();return}
@@ -1433,6 +1470,8 @@ document.addEventListener("click",async ev=>{
     case "joinTrip": joinTrip(); break;
     case "newInvite": newInvite(a.dataset.role); break;
     case "exportTrip": exportTrip(); break;
+    case "fcAdd": { const me=myPerson(); if(!me) break; const n=($("#fcN")||{}).value||"", y=parseFloat((($("#fcY")||{}).value||"").replace(/[^\d.]/g,""));
+      if(!n.trim()||!(y>0)){ toast("Add a name and a ¥ amount"); break; } const F=fcGet(me.id); F.lines=[...(F.lines||[]),{n:n.trim(),y}]; fcSet(me.id,F); render(); break; }
     case "mvpPreview": mvpPreview(); break;
     case "mvpHide": write(()=>deleteDoc(doc(fs,"meta/awards")),"MVPs hidden",["Hid the trip MVPs",""]); break;
     case "importUpdate": importUpdate(); break;
@@ -1463,6 +1502,7 @@ document.addEventListener("change",async ev=>{
   if(t.matches("[data-shopcheck]")){ const id=t.dataset.shopcheck; const v=t.checked; const it=S.shopping.find(x=>x.id===id)||{}; const ok=await write(()=>S.db.doc("shopping/"+id).update({done:v}),"",[v?"Bought":"Un-ticked",it.text]); if(!ok) t.checked=!v; }
   if(t.matches("[data-check]")){ const id=t.dataset.check; const v=t.checked; const ok=await write(()=>S.db.doc("tasks/"+id).update({done:v}),"",[v?"Ticked":"Unticked",(S.tasks.find(x=>x.id===id)||{}).text]); if(!ok) t.checked=!v; }
   if(t.id==="rateDate"){ S.rateDate=t.value||todayJST(); render(); }
+  if(t.matches("[data-fc]")){ const me=myPerson(); if(me){ const F=fcGet(me.id); F[t.dataset.fc]=parseFloat(t.value.replace(/[^\d.]/g,""))||0; fcSet(me.id,F); render(); } }
   if(t.id==="accentPick"){ ls.set("accent",t.value); applyTheme(); render(); }
 });
 document.addEventListener("input",ev=>{ if(ev.target.id==="cvY"){ S.cv=ev.target.value.replace(/[^\d.]/g,""); const tr=rateFor(todayJST()); const o=$("#cvR"); if(o) o.textContent=(S.cv&&tr)?rm(parseFloat(S.cv)*tr.rate100/100):"RM —"; return; } if(ev.target.id==="accentPick"){ document.documentElement.style.setProperty("--accent",ev.target.value) } });
