@@ -999,18 +999,22 @@ function viewShop(){
       <button class="main" ${W()?`data-shop="${esc(x.id)}"`:"disabled"}><div class="ti">${esc(x.text)}</div><div class="sub">${esc(shopFor(x))}${x.note?` · ${esc(x.note)}`:""}</div></button>${x.price?`<span class="due num">${yen(x.price)}</span>`:""}</div>`).join("")}</div></div>`}).join("")
     :`<div class="empty">${S.shopping.length?"Everything here is bought.":"Nothing on the list yet."}${W()?" Add what you want to buy, and where.":""}</div>`}`;
 }
+const DONE_GROUPS=new Set(["Booked","Done"]); // old "done" groups: ticked items live in the Done section instead
 function viewTodo(){
   if(S.todoView==="shop") return viewShop();
-  if(!S.tasks.length) return S.ready?`<div class="empty">No to-dos yet.</div>${W()?`<button class="btn plain" data-act="addTask">+ Add to-do</button>`:""}`:`<div class="empty">Loading…</div>`;
-  const groups=[]; S.tasks.forEach(t=>{ if(!groups.includes(t.group)) groups.push(t.group) });
-  const done=S.tasks.filter(t=>t.done).length;
+  if(!S.tasks.length) return S.ready?`${todoSwitch()}<div class="empty">No to-dos yet.</div>${W()?`<button class="btn plain" data-act="addTask">+ Add to-do</button>`:""}`:`<div class="empty">Loading…</div>`;
+  const open=S.tasks.filter(t=>!t.done), done=S.tasks.filter(t=>t.done);
+  const groups=[]; open.forEach(t=>{ const g=DONE_GROUPS.has(t.group)?"To do":(t.group||"To do"); if(!groups.includes(g)) groups.push(g) });
+  const row=t=>`<div class="task${t.done?" done":""}"><input type="checkbox" id="tk-${esc(t.id)}" data-check="${esc(t.id)}" ${t.done?"checked":""} ${W()?"":"disabled"} aria-label="${esc(t.text)}">
+      <button class="main" ${W()?`data-task="${esc(t.id)}"`:"disabled"}><div class="ti">${esc(t.text)}</div>${t.detail?`<div class="sub">${rich(t.detail)}</div>`:""}${t.done&&t.group&&!DONE_GROUPS.has(t.group)?`<div class="sub">${esc(t.group)}</div>`:""}</button>${t.due&&!t.done?`<span class="due">${esc(t.due)}</span>`:""}</div>`;
   return `${todoSwitch()}
-  <div class="row"><div><div class="eyebrow">Done</div><div class="big num">${done}<span class="muted" style="font-size:18px"> / ${S.tasks.length}</span></div></div><div class="spacer"></div>
-    <button class="btn small plain" data-act="hideDone" aria-pressed="${S.hideDone}">${S.hideDone?"Show done":"Hide done"}</button>${W()?`<button class="btn small" data-act="addTask">+ Add</button>`:""}</div>
-  ${groups.map(g=>{const ts=S.tasks.filter(t=>t.group===g&&(!S.hideDone||!t.done)); const all=S.tasks.filter(t=>t.group===g); if(!ts.length) return "";
-    return `<div class="section"><div class="grouphead"><h3>${esc(g)}</h3><span class="small muted num">${all.filter(t=>t.done).length}/${all.length}</span></div>
-    <div>${ts.map(t=>`<div class="task${t.done?" done":""}"><input type="checkbox" id="tk-${esc(t.id)}" data-check="${esc(t.id)}" ${t.done?"checked":""} ${W()?"":"disabled"} aria-label="${esc(t.text)}">
-      <button class="main" ${W()?`data-task="${esc(t.id)}"`:"disabled"}><div class="ti">${esc(t.text)}</div>${t.detail?`<div class="sub">${rich(t.detail)}</div>`:""}</button>${t.due?`<span class="due">${esc(t.due)}</span>`:""}</div>`).join("")}</div></div>`}).join("")}`;
+  <div class="row"><div><div class="eyebrow">Left to do</div><div class="big num">${open.length}<span class="muted" style="font-size:18px"> · ${done.length} done</span></div></div><div class="spacer"></div>
+    ${W()?`<button class="btn small" data-act="addTask">+ Add</button>`:""}</div>
+  ${groups.map(g=>{ const ts=open.filter(t=>(DONE_GROUPS.has(t.group)?"To do":(t.group||"To do"))===g);
+    return `<div class="section"><div class="grouphead"><h3>${esc(g)}</h3><span class="small muted num">${ts.length}</span></div><div>${ts.map(row).join("")}</div></div>`}).join("")}
+  ${!open.length?`<div class="empty">All done. Nice.</div>`:""}
+  ${done.length?`<details class="section dn" ${S.showDone?"open":""} data-donebox><summary>Done (${done.length})</summary><div>${done.map(row).join("")}</div></details>`:""}
+  <div class="hint">Tick something once it's done or booked and it moves to Done. Untick to bring it back.</div>`;
 }
 
 function viewNotes(){
@@ -1459,18 +1463,26 @@ function rateSheet(){
 }
 
 function taskSheet(id){
-  const t=id?{...S.tasks.find(x=>x.id===id)}:{group:(S.tasks[0]||{}).group||"To do",text:"",detail:"",due:""};
-  const groups=[...new Set(S.tasks.map(x=>x.group))];
+  const groups=[...new Set(S.tasks.map(x=>x.group).filter(g=>g&&!DONE_GROUPS.has(g)))]; if(!groups.length) groups.push("To do");
+  const t=id?{...S.tasks.find(x=>x.id===id)}:{group:S.lastTaskGroup&&groups.includes(S.lastTaskGroup)?S.lastTaskGroup:groups[0],text:"",detail:"",due:""};
+  let g=DONE_GROUPS.has(t.group)?groups[0]:t.group;
   openSheet(id?"Edit to-do":"Add to-do",`
     <div class="f"><label for="tText">To-do</label><input id="tText" value="${esc(t.text)}"></div>
     <div class="f"><label for="tDetail">Details</label><textarea id="tDetail">${esc(t.detail)}</textarea></div>
-    <div class="grid2"><div class="f"><label for="tDue">When</label><input id="tDue" value="${esc(t.due)}" placeholder="e.g. Nov 22"></div>
-      <div class="f"><label for="tGroup">Group</label><input id="tGroup" list="tGroups" value="${esc(t.group)}"><datalist id="tGroups">${groups.map(g=>`<option value="${esc(g)}">`).join("")}</datalist></div></div>
+    <div class="f"><label for="tDue">When</label><input id="tDue" value="${esc(t.due)}" placeholder="e.g. Nov 22"></div>
+    <div class="f"><span class="lab">Group</span><div class="pick" id="tGroups">${groups.map(x=>`<button type="button" data-v="${esc(x)}" aria-pressed="${x===g}">${esc(x)}</button>`).join("")}<button type="button" data-v="" aria-pressed="false">+ New group</button></div>
+      <input id="tNewGroup" placeholder="New group name" hidden style="margin-top:8px"></div>
+    ${id?`<label class="row small" style="font-weight:600"><input type="checkbox" id="tDone" ${t.done?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Done / booked</label>`:""}
     ${id?`<div class="row"><div class="spacer"></div><button class="btn small danger" id="tDel">Delete</button></div>`:""}
     <button class="btn primary" id="tSave">${id?"Save":"Add"}</button>`,p=>{
+    $("#tGroups",p).addEventListener("click",ev=>{ const b=ev.target.closest("button"); if(!b) return;
+      $("#tGroups",p).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+      const nw=$("#tNewGroup",p); nw.hidden=b.dataset.v!==""; if(!nw.hidden) nw.focus(); else g=b.dataset.v; });
     $("#tSave",p).onclick=async()=>{
       const text=$("#tText",p).value.trim(); if(!text){toast("Write the to-do first");return}
-      const doc={text,detail:$("#tDetail",p).value.trim(),due:$("#tDue",p).value.trim(),group:$("#tGroup",p).value.trim()||"To do"};
+      const nw=$("#tNewGroup",p); const group=!nw.hidden?(nw.value.trim()||"To do"):g;
+      const doc={text,detail:$("#tDetail",p).value.trim(),due:$("#tDue",p).value.trim(),group}; if($("#tDone",p)) doc.done=$("#tDone",p).checked;
+      S.lastTaskGroup=group;
       const ok=await write(()=> id?S.db.doc("tasks/"+id).update(doc):S.db.collection("tasks").add({...doc,done:false,order:Math.max(0,...S.tasks.map(x=>x.order||0))+1}), id?"Saved":"Added",[id?"Edited to-do":"Added to-do",text]);
       if(ok) closeSheet();
     };
@@ -1598,6 +1610,7 @@ document.addEventListener("keydown",ev=>{
   if(ev.key==="Escape"&&$("#sheet")) closeSheet();
   if((ev.key==="Enter"||ev.key===" ")&&ev.target.matches("[data-item]")){ev.preventDefault();itemSheet(S.dayId,+ev.target.dataset.item)}
 });
+document.addEventListener("toggle",ev=>{ if(ev.target.matches&&ev.target.matches("[data-donebox]")) S.showDone=ev.target.open; },true);
 document.addEventListener("change",async ev=>{
   const t=ev.target;
   if(t.matches("[data-shopcheck]")){ const id=t.dataset.shopcheck; const v=t.checked; const it=S.shopping.find(x=>x.id===id)||{}; const ok=await write(()=>S.db.doc("shopping/"+id).update({done:v}),"",[v?"Bought":"Un-ticked",it.text]); if(!ok) t.checked=!v; }
