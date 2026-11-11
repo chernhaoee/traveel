@@ -1312,7 +1312,20 @@ function addrSheet(id){
     <div style="font-size:30px;line-height:1.35;font-weight:700;letter-spacing:.02em;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif">${esc(a.ja)}</div>
     <div class="muted">${esc(a.en)}</div>
     ${a.tel?`<div class="small">Tel: <span class="num" style="user-select:all">${esc(a.tel)}</span></div>`:""}
-    <a class="btn plain" href="${esc(mapUrl(a.en))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>`);
+    <a class="btn plain" href="${esc(mapUrl(a.en||a.ja))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+    ${W()?`<button class="btn small plain" id="aEdit" style="align-self:flex-start">Edit address</button>`:""}`,p=>{ const e=$("#aEdit",p); if(e) e.onclick=()=>addrEditSheet(a.id); });
+}
+function addrEditSheet(id){
+  const L=S.meta.addresses||[]; const a=L.find(x=>x.id===id); if(!a) return;
+  openSheet("Edit address",`
+    <div class="f"><label for="aJa">Address in Japanese</label><textarea id="aJa" style="min-height:70px">${esc(a.ja||"")}</textarea><span class="hint">Copy it from the booking confirmation, or from Google Maps with the language set to Japanese.</span></div>
+    <div class="f"><label for="aEn">Address in English</label><input id="aEn" value="${esc(a.en||"")}"><span class="hint">Used for the Google Maps button.</span></div>
+    <div class="f"><label for="aTel">Phone (optional)</label><input id="aTel" inputmode="tel" value="${esc(a.tel||"")}"></div>
+    <button class="btn primary" id="aSave">Save</button>`,p=>{
+    $("#aSave",p).onclick=async()=>{ const v={...a,ja:$("#aJa",p).value.trim(),en:$("#aEn",p).value.trim(),tel:$("#aTel",p).value.trim()};
+      if(!v.ja&&!v.en){toast("Add an address");return}
+      if(await write(()=>S.db.doc("meta/trip").update({addresses:L.map(x=>x.id===a.id?v:x)}),"Saved",["Edited hotel address",a.label||v.en])) addrSheet(a.id); };
+  });
 }
 async function fileURL(id){
   if(S.fileCache[id]) return S.fileCache[id];
