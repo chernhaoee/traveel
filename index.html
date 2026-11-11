@@ -1318,13 +1318,13 @@ function addrSheet(id){
 function addrNewSheet(){ // a day with no address card yet: make one, matched on this day's Stay
   const d=S.days.find(x=>x.id===S.dayId); if(!d) return;
   openSheet("Add hotel address",`
-    <div class="f"><label for="aStay">Stay</label><input id="aStay" value="${esc(d.hotel||"")}" placeholder="e.g. Smile Hotel Shinagawa"><span class="hint">Other days with exactly this Stay get the same address.</span></div>
     <div class="f"><label for="aJa">Address in Japanese</label><textarea id="aJa" style="min-height:70px" placeholder="〒…"></textarea><span class="hint">Copy it from the booking confirmation, or from Google Maps with the language set to Japanese.</span></div>
     <div class="f"><label for="aEn">Address in English</label><input id="aEn"><span class="hint">Used for the Google Maps button.</span></div>
     <div class="f"><label for="aTel">Phone (optional)</label><input id="aTel" inputmode="tel"></div>
     <button class="btn primary" id="aSave">Save</button>`,p=>{
-    $("#aSave",p).onclick=async()=>{ const stay=$("#aStay",p).value.trim(), ja=$("#aJa",p).value.trim(), en=$("#aEn",p).value.trim(), tel=$("#aTel",p).value.trim();
-      if(!stay){toast("Add the Stay name");return} if(!ja&&!en){toast("Add an address");return}
+    $("#aSave",p).onclick=async()=>{ const ja=$("#aJa",p).value.trim(), en=$("#aEn",p).value.trim(), tel=$("#aTel",p).value.trim();
+      if(!ja&&!en){toast("Add an address");return}
+      const stay=d.hotel||en||ja; // linked by the day's Stay; a day with no Stay gets the address as its Stay
       const card={id:"a"+uid().slice(0,6),label:stay,nameJa:stay,match:stay,ja,en,tel};
       if(await write(async()=>{ const b=writeBatch(fs); b.update(doc(fs,"meta/trip"),{addresses:[...(S.meta.addresses||[]),card]}); if(stay!==d.hotel) b.update(doc(fs,"days/"+d.id),{hotel:stay}); await b.commit(); },"Saved",["Added hotel address",stay])) closeSheet(); };
   });
