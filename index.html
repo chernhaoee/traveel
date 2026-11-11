@@ -115,6 +115,11 @@ h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:u
 .day span{display:block;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .day[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .dayhead{display:flex;flex-direction:column;gap:6px}
+.route{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0;position:relative}
+.route li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;padding:7px 0;position:relative}
+.route li:not(:last-child)::before{content:"";position:absolute;left:14px;top:30px;bottom:-7px;width:2px;background:var(--accent-line,var(--line))}
+.route .rn{width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:700;font-size:13px}
+.route .ti{font-weight:600}.route .sub{color:var(--muted);font-size:13px}
 .dtop{display:flex;align-items:flex-start;gap:8px}.dtop .eyebrow{flex:1;min-width:0}
 .dicons{display:flex;gap:6px;margin:-6px -4px 0 0}
 .ibtn{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0}
@@ -291,6 +296,23 @@ const plain = s => String(s??"").replace(/\*\*/g,"");
 const ls = {get(k,d){try{const v=localStorage.getItem(k);return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 const yen = n => "¥"+Math.round(n||0).toLocaleString("en-US");
 const rm = n => (n<0?"−":"")+"RM "+Math.abs(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Route through several places in Google Maps, in order. Google takes up to 10 places per link.
+const routeUrl = qs => "https://www.google.com/maps/dir/"+qs.map(q=>encodeURIComponent(q)).join("/");
+function dayRoute(d){ const pts=[]; const add=(label,q,sub)=>{ q=(q||"").trim(); if(!q||(pts.length&&pts[pts.length-1].q===q)) return; pts.push({label,q,sub}); };
+  if(d.hotel) add("Start: your stay",d.hotel,d.hotel);
+  (d.items||[]).forEach(it=>add(it.title||it.map,it.map,it.time||""));
+  return pts; }
+function tripRoute(from,to){ const ds=[...new Set(S.days.filter(canSeeDay).map(x=>x.date))].sort().filter(x=>x>=from&&x<=to), pts=[];
+  ds.forEach(dt=>{ const d=S.days.filter(canSeeDay).find(x=>x.date===dt&&!(x.visibleTo||[]).length)||S.days.filter(canSeeDay).find(x=>x.date===dt); const q=(d.hotel||"").trim(); if(!q) return; // travel days with no Stay are skipped
+    const last=pts[pts.length-1]; if(last&&last.q===q){ last.to=dt; return; } pts.push({q,from:dt,to:dt,city:d.city||""}); });
+  return pts.map(p=>({q:p.q,label:p.city?String(p.city).split("→").pop().trim():p.q,sub:fmtDate(p.from)+(p.to!==p.from?" – "+fmtDate(p.to):"")+(p.city?" · "+p.q:"")})); }
+function routeSheet(title,pts,hint){
+  const parts=[]; for(let i=0;i<pts.length-1;i+=9) parts.push(pts.slice(i,i+10));
+  openSheet(title,`
+    <ol class="route">${pts.map((p,i)=>`<li><span class="rn">${i+1}</span><div><div class="ti">${esc(p.label)}</div>${p.sub?`<div class="sub">${esc(p.sub)}</div>`:""}</div></li>`).join("")}</ol>
+    ${hint?`<div class="hint">${hint}</div>`:""}
+    ${parts.map((g,k)=>`<a class="btn ${k?"plain":"primary"}" href="${esc(routeUrl(g.map(p=>p.q)))}" target="_blank" rel="noopener">Open in Google Maps${parts.length>1?` (part ${k+1}: ${g[0].label.slice(0,18)} → ${g[g.length-1].label.slice(0,18)})`:""} ↗</a>`).join("")}`);
+}
 const mapUrl = q => "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
 const todayJST = () => new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Tokyo"});
 const fmtDate = (iso,opt={weekday:"short",day:"numeric",month:"short"}) => { if(!iso) return ""; const [y,m,d]=iso.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)).toLocaleDateString("en-GB",{...opt,timeZone:"UTC"}); };
@@ -855,6 +877,7 @@ function viewPlan(){
         ${w.kind==="snow"?`<div class="hint" style="margin:6px 0 0">🌨 Snow possible: grippy shoes, and check trains and buses before heading out.</div>`:""}`; })()}
     <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${S.isOwner?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
   </div>
+  ${(()=>{ const n=dayRoute(d).length; return n>=2?`<div class="row"><button class="btn small plain" data-act="dayRoute">🗺 Today's route · ${n} stops</button></div>`:""; })()}
   ${(ad||tix.length||W())?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:W()?`<button class="btn small plain" data-act="newAddr">🏨 Add hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
@@ -1109,6 +1132,11 @@ function viewTrip(){
     <div class="row"><h3>People (for splitting)</h3><div class="spacer"></div>${W()?`<button class="btn small plain" data-act="addPerson">+ Add</button>`:""}</div>
     ${S.people.length?`<div class="list">${S.people.map(p=>`<div class="li"><div class="main"><div class="ti">${esc(p.name)} ${(myPerson()||{}).id===p.id?`<span class="tag">You</span>`:""}</div>${(()=>{const m=S.members.find(m=>m.personId===p.id&&m.id!==S.myId);return m?`<div class="sub">${esc(m.name||m.email||"Linked")}</div>`:""})()}</div>${W()?`<button class="btn small plain" data-person="${esc(p.id)}">Rename</button>`:""}</div>`).join("")}</div>`:`<div class="muted small">No one added yet.</div>`}
   </div>
+  ${(()=>{ const ds=[...new Set(S.days.filter(canSeeDay).map(x=>x.date))].sort(); if(ds.length<2) return "";
+    const opt=sel=>ds.map(dt=>`<option value="${esc(dt)}" ${dt===sel?"selected":""}>${esc(fmtDate(dt))} · ${esc(String((S.days.find(x=>x.date===dt)||{}).city||"").split("→").pop().trim())}</option>`).join("");
+    return `<div class="card section"><h3>Trip route</h3><div class="hint">Where you sleep each night, in order. Pick a stretch, or the whole trip.</div>
+    <div class="grid2"><div class="f"><label for="rFrom">From</label><select id="rFrom">${opt(ds[0])}</select></div><div class="f"><label for="rTo">To</label><select id="rTo">${opt(ds[ds.length-1])}</select></div></div>
+    <button class="btn plain" data-act="tripRoute">🗺 Show route</button></div>`; })()}
   ${(S.meta.addresses||[]).length?`<div class="card section"><h3>Address cards</h3><div class="hint">Big Japanese address to show a taxi driver or the luggage counter.</div><div class="row">${S.meta.addresses.map(a=>`<button class="btn small plain" data-addr="${esc(a.id)}">🚕 ${esc(a.label)}</button>`).join("")}</div></div>`:""}
   <div class="card section">
     <div class="row"><h3>Tickets & bookings</h3><div class="spacer"></div>${S.canWrite?`<button class="btn small" data-act="addWallet">+ Upload</button>`:""}</div>
@@ -1740,6 +1768,9 @@ document.addEventListener("click",async ev=>{
     case "hideDone": S.hideDone=!S.hideDone; render(); break;
     case "addNote": noteSheet(null); break;
     case "addPerson": personSheet(null); break;
+    case "dayRoute": { const d=S.days.find(x=>x.id===S.dayId); if(d) routeSheet(fmtDate(d.date)+" route",dayRoute(d),"Stops with a Google Maps search, in the order of the plan. Stops without one are skipped."+(W()?" Add or fix one by tapping the stop.":"")); break; }
+    case "tripRoute": { let f=$("#rFrom").value, t=$("#rTo").value; if(f>t) [f,t]=[t,f]; const pts=tripRoute(f,t);
+      if(pts.length<2){ toast("Only one stay in those dates. Pick a longer stretch."); break; } routeSheet("Trip route",pts,"Each place is where you sleep. Google Maps draws the route between them."); break; }
     case "newAddr": addrNewSheet(); break;
     case "copyLink": { const inp=$("#shareLink"); try{await navigator.clipboard.writeText(SHARE_URL);toast("Link copied")}catch(e){inp.select();toast("Select and copy the link")} break; }
   }
