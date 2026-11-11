@@ -1317,11 +1317,14 @@ function addrSheet(id){
 }
 function addrNewSheet(){ // a day with no address card yet: make one, matched on this day's Stay
   const d=S.days.find(x=>x.id===S.dayId); if(!d) return;
+  const L=S.meta.addresses||[];
   openSheet("Add hotel address",`
+    ${L.length?`<div class="f"><label for="aCopy">Same hotel as another day?</label><select id="aCopy"><option value="">No, I'll fill it in</option>${L.map(a=>`<option value="${esc(a.id)}">Copy: ${esc(a.label||a.en)}</option>`).join("")}</select></div>`:""}
     <div class="f"><label for="aJa">Address in Japanese</label><textarea id="aJa" style="min-height:70px" placeholder="〒…"></textarea><span class="hint">Copy it from the booking confirmation, or from Google Maps with the language set to Japanese.</span></div>
     <div class="f"><label for="aEn">Address in English</label><input id="aEn"><span class="hint">Used for the Google Maps button.</span></div>
     <div class="f"><label for="aTel">Phone (optional)</label><input id="aTel" inputmode="tel"></div>
     <button class="btn primary" id="aSave">Save</button>`,p=>{
+    const cp=$("#aCopy",p); if(cp) cp.onchange=()=>{ const a=L.find(x=>x.id===cp.value)||{}; $("#aJa",p).value=a.ja||""; $("#aEn",p).value=a.en||""; $("#aTel",p).value=a.tel||""; };
     $("#aSave",p).onclick=async()=>{ const ja=$("#aJa",p).value.trim(), en=$("#aEn",p).value.trim(), tel=$("#aTel",p).value.trim();
       if(!ja&&!en){toast("Add an address");return}
       const stay=d.hotel||en||ja; // linked by the day's Stay; a day with no Stay gets the address as its Stay
