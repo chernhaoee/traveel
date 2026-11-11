@@ -1256,10 +1256,15 @@ function addDaySheet(){
     <div class="grid2"><div class="f"><label for="nDate">Date</label><input id="nDate" type="date" value="${esc(def)}"></div>
       <div class="f"><label for="nCity">City</label><input id="nCity" value="${esc(last.city?String(last.city).split("→").pop().trim():"")}" placeholder="e.g. Tokyo"></div></div>
     <div class="f"><label for="nTitle">Day title</label><input id="nTitle" placeholder="e.g. Free day in Tokyo"></div>
-    <div class="f"><label for="nHotel">Stay</label><input id="nHotel" value="${esc(last.hotel||"")}"></div>
+    <div class="f"><label for="nHotel">Stay</label><input id="nHotel" value="${esc(last.hotel||"")}"><span class="hint">Copied from the day before. Change it if you're somewhere else.</span></div>
     ${S.isOwner?`<div class="f"><span class="lab">Who can see it</span>${dayVisPicker(new Set())}</div>`:""}
     <div class="hint">Add a day before, after or in the middle of the trip. It slots into date order automatically. Then add stops to it.</div>
     <button class="btn primary" id="nSave">Add day</button>`,p=>{ if(S.isOwner) dayVisWire(p);
+    // City and Stay follow the day before the picked date (or the first day, if it's before the trip).
+    const fill=()=>{ const dt=$("#nDate",p).value; if(!dt) return; const sorted=[...S.days].filter(canSeeDay).sort((a,b)=>a.date.localeCompare(b.date));
+      const prev=[...sorted].reverse().find(x=>x.date<dt&&!(x.visibleTo||[]).length)||[...sorted].reverse().find(x=>x.date<dt)||sorted[0]||{};
+      $("#nCity",p).value=prev.city?String(prev.city).split("→").pop().trim():""; $("#nHotel",p).value=prev.hotel||""; };
+    $("#nDate",p).addEventListener("change",fill);
     $("#nSave",p).onclick=async()=>{
       const date=$("#nDate",p).value; if(!date){toast("Pick a date");return}
       const vis=S.isOwner?dayVisRead(p):[]; const c=dayClash(date,vis); if(c){toast(c);return}
