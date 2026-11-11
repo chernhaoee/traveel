@@ -855,7 +855,7 @@ function viewPlan(){
         ${w.kind==="snow"?`<div class="hint" style="margin:6px 0 0">🌨 Snow possible: grippy shoes, and check trains and buses before heading out.</div>`:""}`; })()}
     <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${S.isOwner?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
   </div>
-  ${(ad||tix.length)?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
+  ${(ad||tix.length||W())?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:W()?`<button class="btn small plain" data-act="newAddr">🏨 Add hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${planToggle}<div class="tl">${tl}</div>
@@ -1315,6 +1315,20 @@ function addrSheet(id){
     <a class="btn plain" href="${esc(mapUrl(a.en||a.ja))}" target="_blank" rel="noopener">Open in Google Maps ↗</a>
     ${W()?`<button class="btn small plain" id="aEdit" style="align-self:flex-start">Edit address</button>`:""}`,p=>{ const e=$("#aEdit",p); if(e) e.onclick=()=>addrEditSheet(a.id); });
 }
+function addrNewSheet(){ // a day with no address card yet: make one, matched on this day's Stay
+  const d=S.days.find(x=>x.id===S.dayId); if(!d) return;
+  openSheet("Add hotel address",`
+    <div class="f"><label for="aStay">Stay</label><input id="aStay" value="${esc(d.hotel||"")}" placeholder="e.g. Smile Hotel Shinagawa"><span class="hint">Other days with exactly this Stay get the same address.</span></div>
+    <div class="f"><label for="aJa">Address in Japanese</label><textarea id="aJa" style="min-height:70px" placeholder="〒…"></textarea><span class="hint">Copy it from the booking confirmation, or from Google Maps with the language set to Japanese.</span></div>
+    <div class="f"><label for="aEn">Address in English</label><input id="aEn"><span class="hint">Used for the Google Maps button.</span></div>
+    <div class="f"><label for="aTel">Phone (optional)</label><input id="aTel" inputmode="tel"></div>
+    <button class="btn primary" id="aSave">Save</button>`,p=>{
+    $("#aSave",p).onclick=async()=>{ const stay=$("#aStay",p).value.trim(), ja=$("#aJa",p).value.trim(), en=$("#aEn",p).value.trim(), tel=$("#aTel",p).value.trim();
+      if(!stay){toast("Add the Stay name");return} if(!ja&&!en){toast("Add an address");return}
+      const card={id:"a"+uid().slice(0,6),label:stay,nameJa:stay,match:stay,ja,en,tel};
+      if(await write(async()=>{ const b=writeBatch(fs); b.update(doc(fs,"meta/trip"),{addresses:[...(S.meta.addresses||[]),card]}); if(stay!==d.hotel) b.update(doc(fs,"days/"+d.id),{hotel:stay}); await b.commit(); },"Saved",["Added hotel address",stay])) closeSheet(); };
+  });
+}
 function addrEditSheet(id){
   const L=S.meta.addresses||[]; const a=L.find(x=>x.id===id); if(!a) return;
   openSheet("Edit address",`
@@ -1339,9 +1353,11 @@ function walletView(id){
   openSheet(w.title,`
     <div id="wBody" class="muted small">Loading…</div>
     <div class="hint">${w.day?esc(fmtDate(w.day)):"Whole trip"} · ${visAll(w)?"Everyone can see it":esc(visLabel(w))}. Saved in the app, so it opens offline once you've viewed it.</div>
-    ${(S.isOwner||(mine&&S.canWrite))?`${visPicker(w.vis)}<div class="row"><button class="btn small" id="wVis">Save who can see</button><div class="spacer"></div><button class="btn small danger" id="wDel">Delete</button></div>`:""}`,p=>{ visWire(p);
-    const vb=$("#wVis",p); if(vb) vb.onclick=async()=>{ const vis=visRead(p);
-      if(await write(async()=>{ const b=writeBatch(fs); b.update(doc(fs,"wallet/"+id),{vis}); b.update(doc(fs,"files/"+w.assetId),{vis}); await b.commit(); },"Saved",["Changed who can see",w.title+" → "+(vis.includes("all")?"everyone":vis.map(pname).join(", "))])) closeSheet(); };
+    ${(S.isOwner||(mine&&S.canWrite))?`<div class="f"><label for="wTitle">Name</label><input id="wTitle" value="${esc(w.title||"")}"></div>
+    <div class="f"><label for="wDay">Day</label><select id="wDay"><option value="">Whole trip</option>${[...new Set(S.days.map(x=>x.date))].sort().map(dt=>`<option value="${esc(dt)}" ${dt===w.day?"selected":""}>${esc(fmtDate(dt))} · ${esc((S.days.find(x=>x.date===dt)||{}).city||"")}</option>`).join("")}</select></div>
+    ${visPicker(w.vis)}<div class="row"><button class="btn small primary" id="wVis">Save</button><div class="spacer"></div><button class="btn small danger" id="wDel">Delete</button></div>`:""}`,p=>{ visWire(p);
+    const vb=$("#wVis",p); if(vb) vb.onclick=async()=>{ const vis=visRead(p), title=$("#wTitle",p).value.trim()||w.title, day=$("#wDay",p).value;
+      if(await write(async()=>{ const b=writeBatch(fs); b.update(doc(fs,"wallet/"+id),{vis,title,day}); b.update(doc(fs,"files/"+w.assetId),{vis}); await b.commit(); },"Saved",["Edited ticket",title+(day?" · "+fmtDate(day):"")+" · "+(vis.includes("all")?"everyone":vis.map(pname).join(", "))])) closeSheet(); };
     fileURL(w.assetId).then(f=>{ const b=$("#wBody",p); if(!b) return;
       if(!f){ b.textContent="This file is missing. Upload it again."; return; }
       b.innerHTML=f.type.startsWith("image")?`<img src="${f.url}" alt="${esc(w.title)}" style="width:100%;border-radius:10px;border:1px solid var(--line);background:#fff">`:`<a class="btn" href="${f.url}" target="_blank" rel="noopener">Open PDF ↗</a>`;
@@ -1721,6 +1737,7 @@ document.addEventListener("click",async ev=>{
     case "hideDone": S.hideDone=!S.hideDone; render(); break;
     case "addNote": noteSheet(null); break;
     case "addPerson": personSheet(null); break;
+    case "newAddr": addrNewSheet(); break;
     case "copyLink": { const inp=$("#shareLink"); try{await navigator.clipboard.writeText(SHARE_URL);toast("Link copied")}catch(e){inp.select();toast("Select and copy the link")} break; }
   }
 });
