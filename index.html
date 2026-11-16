@@ -773,13 +773,16 @@ async function mvpPreview(){ const list=await computeAwards(); S.mvpDraft={list}
 /* ---------- place previews (Wikipedia, cached on this phone) ---------- */
 const WP={}, WPbusy=new Set(); let wpTimer=null;
 // Words that don't identify a place on their own (cities, "station", food types, chains), so a match on them alone doesn't count
-const WP_GENERIC=new Set("tokyo kyoto osaka japan fujikawaguchiko yamanashi station stn street area city ward district near the and with from for reserve daypack night exploring workshop coin ring sushi ramen cafe restaurant shop store lawson familymart eleven".split(" "));
+const WP_GENERIC=new Set("tokyo kyoto osaka japan fujikawaguchiko yamanashi station stn street area city ward district near the and with from for reserve daypack night exploring workshop coin ring sushi ramen cafe restaurant shop store lawson familymart eleven temple shrine jinja garden gardens park".split(" "));
 const wpNorm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 function wpGet(q){ if(q in WP) return WP[q]; try{ const v=localStorage.getItem("wp3:"+q); if(v){ WP[q]=JSON.parse(v); return WP[q]; } }catch(e){} return undefined; }
-function wpMatch(q,title,all){ const qs=wpNorm(q).split(/[^a-z0-9]+/).filter(Boolean), ts=wpNorm(title).replace(/[^a-z0-9]/g,"");
+// A photo counts only if its title has every key word of the place name (the part before the comma; the city and anything in brackets don't count).
+// Otherwise "Minoh Falls" picks up the Minoh city article, whose main photo is Katsuoji.
+function wpMatch(q,title){ const name=String(q).split(",")[0].replace(/\(.*?\)/g," ");
+  const qs=wpNorm(name).split(/[^a-z0-9]+/).filter(Boolean), ts=wpNorm(title).replace(/[^a-z0-9]/g,"");
   const strong=qs.filter(w=>w.length>=4&&!WP_GENERIC.has(w));
-  if(strong.length) return all?strong.every(w=>ts.includes(w)):strong.some(w=>ts.includes(w));
-  return wpNorm(q).replace(/[^a-z0-9]/g,"")===ts; }
+  if(strong.length) return strong.every(w=>ts.includes(w));
+  return wpNorm(name).replace(/[^a-z0-9]/g,"")===ts; }
 async function wpLookup(q){ if(!q||WPbusy.has(q)||wpGet(q)!==undefined) return; WPbusy.add(q);
   try{ const u="https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&generator=search&gsrlimit=1&gsrsearch="+encodeURIComponent(q)+"&prop=pageimages%7Cextracts%7Cinfo&inprop=url&exintro=1&explaintext=1&exsentences=3&piprop=thumbnail&pithumbsize=800";
     const j=await (await fetch(u)).json(); const pg=j&&j.query&&j.query.pages?Object.values(j.query.pages)[0]:null;
@@ -788,7 +791,7 @@ async function wpLookup(q){ if(!q||WPbusy.has(q)||wpGet(q)!==undefined) return; 
       const name=q.split(",")[0].trim();
       const cu="https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=3&gsrsearch="+encodeURIComponent(name+" filetype:bitmap")+"&prop=imageinfo&iiprop=url&iiurlwidth=800";
       const cj=await (await fetch(cu)).json(); const files=cj&&cj.query&&cj.query.pages?Object.values(cj.query.pages).sort((a,b)=>(a.index||0)-(b.index||0)):[];
-      const f=files.find(x=>x.imageinfo&&x.imageinfo[0]&&wpMatch(name,x.title.replace(/^File:/,""),true));
+      const f=files.find(x=>x.imageinfo&&x.imageinfo[0]&&wpMatch(name,x.title.replace(/^File:/,"")));
       if(f) hit={t:name,img:f.imageinfo[0].thumburl||f.imageinfo[0].url,x:"",url:f.imageinfo[0].descriptionurl,src:"Wikimedia Commons"}; }
     if(!hit) hit={none:1};
     WP[q]=hit; try{ localStorage.setItem("wp3:"+q,JSON.stringify(hit)); }catch(e){}
