@@ -677,11 +677,12 @@ async function importUpdate(){
     ${chg.length?`<div class="lab">Updated</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(chg)}</ul>`:""}
     ${del.length?`<label class="row small" style="gap:8px"><input type="checkbox" id="impDel"> Also remove ${del.length>1?`the ${del.length} items that aren't`:"the 1 item that isn't"} in the file</label><ul class="small muted" style="margin:4px 0 8px;padding-left:18px">${list(del)}</ul>`:""}
     <button class="btn primary" id="impGo">Apply changes</button>`,p=>{
-    $("#impGo",p).onclick=async()=>{ const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
+    $("#impGo",p).onclick=async()=>{ let picOk=0; const picErr=[]; const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
       const ops=[...add.map(x=>["set",...x]),...chg.map(x=>["set",...x]),...rm.map(x=>["del",...x])];
       const ok=await write(async()=>{ for(let i=0;i<ops.length;i+=400){ const b=writeBatch(fs); ops.slice(i,i+400).forEach(([k,c,id,body])=>k==="set"?b.set(doc(fs,c+"/"+id),body):b.delete(doc(fs,c+"/"+id))); await b.commit(); }
-        for(const [id,b] of pics) await setDoc(doc(fs,"files/"+id),{data:b.data,type:b.type||"image/jpeg",by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); },
+        for(const [id,b] of pics){ try{ await setDoc(doc(fs,"files/"+id),{data:b.data,type:b.type||"image/jpeg",by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); picOk++; }catch(e){ picErr.push(id+": "+(e.code||e.message||e)); console.warn("photo import",id,e); } } },
         "Changes imported",["Imported changes",`${add.length} new, ${chg.length} updated${rm.length?`, ${rm.length} removed`:""}${pics.length?`, ${pics.length} photos`:""}`]);
+      if(ok&&pics.length){ openSheet("Photos",`<div class="small">📸 <strong>${picOk}</strong> of ${pics.length} example photos added.</div>${picErr.length?`<div class="hint" style="color:var(--neg,#c0392b)">Didn't save:</div><ul class="small" style="padding-left:18px">${picErr.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="small muted">Screenshot this for Claude.</div>`:""}`); return; }
       if(ok) closeSheet(); };
   });
 }
@@ -1443,7 +1444,7 @@ async function makeThumb(f){ const bmp=await createImageBitmap(f); const sc=Math
   return c.toDataURL("image/jpeg",0.6); }
 async function photoSheet(fileId,title,thumb){
   openSheet(title||"Photo",`<div id="phBody" style="text-align:center">${thumb?`<img src="${esc(thumb)}" alt="" style="max-width:100%;border-radius:12px;filter:blur(2px)">`:`<div class="muted small">Loading…</div>`}</div>`,async p=>{
-    try{ const f=await fileURL(fileId); $("#phBody",p).innerHTML=f?`<img src="${f.url}" alt="${esc(title||"")}" style="max-width:100%;border-radius:12px">`:`<div class="muted small">Photo not found.</div>`; }catch(e){ $("#phBody",p).innerHTML=`<div class="muted small">Couldn't load the photo.</div>`; } });
+    try{ const f=await fileURL(fileId); $("#phBody",p).innerHTML=f?`<img src="${f.url}" alt="${esc(title||"")}" style="max-width:100%;border-radius:12px">`:(thumb?`<img src="${esc(thumb)}" alt="" style="max-width:100%;border-radius:12px"><div class="muted small" style="margin-top:6px">Only the small version is saved. Re-add the photo in Edit stop for the full size.</div>`:`<div class="muted small">Photo not found.</div>`); }catch(e){ $("#phBody",p).innerHTML=`<div class="muted small">Couldn't load the photo (${esc(e.code||e.message||"error")}).</div>`; } });
 }
 async function compressFile(f){
   const toURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
