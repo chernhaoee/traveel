@@ -682,19 +682,18 @@ async function importUpdate(){
   if(!add.length&&!chg.length&&!del.length&&!pics.length){ toast("Nothing to change. The file matches the trip"); return; }
   openSheet("Import changes",`
     ${since.length?`<div class="hint" style="color:var(--neg,#c0392b)">⚠️ ${since.length} change${since.length>1?"s were":" was"} made in the app after this file was exported (latest: ${esc((since[0].who||"someone")+" "+(since[0].a||"").toLowerCase())}). Importing may overwrite those. Export again first if unsure.</div>`:""}
-    <div class="small"><strong>${add.length}</strong> new · <strong>${chg.length}</strong> updated · <strong>${del.length}</strong> not in the file</div>
+    <div class="row" style="align-items:center;gap:10px"><div class="small" style="flex:1"><strong>${add.length}</strong> new · <strong>${chg.length}</strong> updated · <strong>${del.length}</strong> not in the file</div><button class="btn small primary" id="impGo" style="flex:none">Apply</button></div><div class="small" id="impStat" style="display:none;color:var(--accent);font-weight:600" role="status" aria-live="polite"></div>
     ${pics.length?`<div class="small">📸 <strong>${pics.length}</strong> example photo${pics.length>1?"s":""} to add</div>`:""}
     ${add.length?`<div class="lab">New</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(add)}</ul>`:""}
     ${chg.length?`<div class="lab">Updated</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(chg)}</ul>`:""}
-    ${del.length?`<label class="row small" style="gap:8px"><input type="checkbox" id="impDel"> Also remove ${del.length>1?`the ${del.length} items that aren't`:"the 1 item that isn't"} in the file</label><ul class="small muted" style="margin:4px 0 8px;padding-left:18px">${list(del)}</ul>`:""}
-    <button class="btn primary" id="impGo">Apply changes</button>`,p=>{
-    $("#impGo",p).onclick=async()=>{ const gb=$("#impGo",p); if(gb.disabled) return; gb.disabled=true; gb.textContent="Importing…"; let picOk=0; const picErr=[]; const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
+    ${del.length?`<label class="row small" style="gap:8px"><input type="checkbox" id="impDel"> Also remove ${del.length>1?`the ${del.length} items that aren't`:"the 1 item that isn't"} in the file</label><ul class="small muted" style="margin:4px 0 8px;padding-left:18px">${list(del)}</ul>`:""}`,p=>{
+    $("#impGo",p).onclick=async()=>{ const gb=$("#impGo",p); if(gb.disabled) return; gb.disabled=true; gb.textContent="…"; const st=$("#impStat",p); const say=t=>{ st.style.display=""; st.textContent=t; }; say("Got it. Saving the stops…"); let picOk=0; const picErr=[]; const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
       const ops=[...add.map(x=>["set",...x]),...chg.map(x=>["set",...x]),...rm.map(x=>["del",...x])];
       const ok=await write(async()=>{ for(let i=0;i<ops.length;i+=400){ const b=writeBatch(fs); ops.slice(i,i+400).forEach(([k,c,id,body])=>k==="set"?b.set(doc(fs,c+"/"+id),body):b.delete(doc(fs,c+"/"+id))); await b.commit(); }
-        for(const [n,[id,b]] of pics.entries()){ gb.textContent=`Uploading photo ${n+1} of ${pics.length}…`; try{ await setDoc(doc(fs,"files/"+id),{data:b.data,type:b.type||"image/jpeg",by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); picOk++; }catch(e){ picErr.push(id+": "+(e.code||e.message||e)); console.warn("photo import",id,e); } } },
+        for(const [n,[id,b]] of pics.entries()){ say(`Uploading photo ${n+1} of ${pics.length}… keep this open`); try{ await setDoc(doc(fs,"files/"+id),{data:b.data,type:b.type||"image/jpeg",by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); picOk++; }catch(e){ picErr.push(id+": "+(e.code||e.message||e)); console.warn("photo import",id,e); } } },
         "Changes imported",["Imported changes",`${add.length} new, ${chg.length} updated${rm.length?`, ${rm.length} removed`:""}${pics.length?`, ${pics.length} photos`:""}`]);
       if(ok&&pics.length){ openSheet("Photos",`<div class="small">📸 <strong>${picOk}</strong> of ${pics.length} example photos added.</div>${picErr.length?`<div class="hint" style="color:var(--neg,#c0392b)">Didn't save:</div><ul class="small" style="padding-left:18px">${picErr.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="small muted">Screenshot this for Claude.</div>`:""}`); return; }
-      if(ok) closeSheet(); else { gb.disabled=false; gb.textContent="Apply changes"; } };
+      if(ok) closeSheet(); else { gb.disabled=false; gb.textContent="Apply"; say("That didn't go through. Check the message at the bottom and try again."); } };
   });
 }
 async function importData(){
