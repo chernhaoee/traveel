@@ -660,22 +660,28 @@ async function importUpdate(){
   for(const c of XCOLS){ const f=file[c]; if(!f||typeof f!=="object") continue;
     for(const [id,body] of Object.entries(f)){ if(!body||typeof body!=="object"||Array.isArray(body)) continue; if(!cur[c][id]) add.push([c,id,body]); else if(stable(cur[c][id])!==stable(body)) chg.push([c,id,body]); }
     for(const id of Object.keys(cur[c])) if(!(id in f)) del.push([c,id]); }
+  // example photos: add-only, never replaced or removed (wallet files share this store)
+  const pics=[]; if(file.photos&&typeof file.photos==="object") for(const [id,b] of Object.entries(file.photos)){
+    if(!b||typeof b.data!=="string"||!/^data:image\//.test(b.data)) continue;
+    try{ if(!(await getDoc(doc(fs,"files/"+id))).exists()) pics.push([id,b]); }catch(e){ pics.push([id,b]); } }
   const at=(file._traveel||{}).exportedAt||0;
   const since=at?S.audit.filter(x=>x.at>at&&x.a!=="Exported the trip"):[];
   const label=([c,id,b])=>{ const x=b||cur[c][id]||{}; return `${c}: ${x.title||x.name||x.text||x.city||x.date||id}`; };
   const list=a=>a.slice(0,8).map(x=>`<li>${esc(label(x))}</li>`).join("")+(a.length>8?`<li class="muted">…and ${a.length-8} more</li>`:"");
-  if(!add.length&&!chg.length&&!del.length){ toast("Nothing to change. The file matches the trip"); return; }
+  if(!add.length&&!chg.length&&!del.length&&!pics.length){ toast("Nothing to change. The file matches the trip"); return; }
   openSheet("Import changes",`
     ${since.length?`<div class="hint" style="color:var(--neg,#c0392b)">⚠️ ${since.length} change${since.length>1?"s were":" was"} made in the app after this file was exported (latest: ${esc((since[0].who||"someone")+" "+(since[0].a||"").toLowerCase())}). Importing may overwrite those. Export again first if unsure.</div>`:""}
     <div class="small"><strong>${add.length}</strong> new · <strong>${chg.length}</strong> updated · <strong>${del.length}</strong> not in the file</div>
+    ${pics.length?`<div class="small">📸 <strong>${pics.length}</strong> example photo${pics.length>1?"s":""} to add</div>`:""}
     ${add.length?`<div class="lab">New</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(add)}</ul>`:""}
     ${chg.length?`<div class="lab">Updated</div><ul class="small" style="margin:4px 0 8px;padding-left:18px">${list(chg)}</ul>`:""}
     ${del.length?`<label class="row small" style="gap:8px"><input type="checkbox" id="impDel"> Also remove ${del.length>1?`the ${del.length} items that aren't`:"the 1 item that isn't"} in the file</label><ul class="small muted" style="margin:4px 0 8px;padding-left:18px">${list(del)}</ul>`:""}
     <button class="btn primary" id="impGo">Apply changes</button>`,p=>{
     $("#impGo",p).onclick=async()=>{ const rm=$("#impDel",p)&&$("#impDel",p).checked?del:[];
       const ops=[...add.map(x=>["set",...x]),...chg.map(x=>["set",...x]),...rm.map(x=>["del",...x])];
-      const ok=await write(async()=>{ for(let i=0;i<ops.length;i+=400){ const b=writeBatch(fs); ops.slice(i,i+400).forEach(([k,c,id,body])=>k==="set"?b.set(doc(fs,c+"/"+id),body):b.delete(doc(fs,c+"/"+id))); await b.commit(); } },
-        "Changes imported",["Imported changes",`${add.length} new, ${chg.length} updated${rm.length?`, ${rm.length} removed`:""}`]);
+      const ok=await write(async()=>{ for(let i=0;i<ops.length;i+=400){ const b=writeBatch(fs); ops.slice(i,i+400).forEach(([k,c,id,body])=>k==="set"?b.set(doc(fs,c+"/"+id),body):b.delete(doc(fs,c+"/"+id))); await b.commit(); }
+        for(const [id,b] of pics) await setDoc(doc(fs,"files/"+id),{data:b.data,type:b.type||"image/jpeg",by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); },
+        "Changes imported",["Imported changes",`${add.length} new, ${chg.length} updated${rm.length?`, ${rm.length} removed`:""}${pics.length?`, ${pics.length} photos`:""}`]);
       if(ok) closeSheet(); };
   });
 }
