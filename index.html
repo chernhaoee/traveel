@@ -47,6 +47,10 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px}
 .brand p{margin:0;font-size:12.5px;color:var(--muted)}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--fg);background:transparent;white-space:nowrap}
 .chip.soft{border-color:var(--line);color:var(--muted)}
+.shot{display:flex;align-items:center;gap:10px;margin-top:8px;padding:0;border:0;background:none;cursor:zoom-in;text-align:left;font:inherit;color:var(--muted)}
+.shot img{width:96px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--fill)}
+.shot span{font-size:12px;font-weight:600}
+.shotchip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--accent-soft,rgba(229,72,77,.1));color:var(--accent)}
 .sthumb{flex:none;width:44px;height:44px;border-radius:10px;overflow:hidden;border:1px solid var(--line);padding:0;background:var(--fill);cursor:zoom-in}
 .sthumb img{width:100%;height:100%;object-fit:cover;display:block}
 .fcbar{display:flex;height:10px;border-radius:6px;overflow:hidden;background:var(--fill);margin:10px 0 6px}
@@ -859,7 +863,8 @@ function viewPlan(){
         <div class="ti">${(()=>{ const q=(it.map||"").trim(); const h=q?wpGet(q):null; if(q&&h===undefined) setTimeout(()=>wpLookup(q),0);
           return h&&!h.none?`<span class="wpname" role="button" tabindex="0" data-wp="${esc(q)}" data-wpname="${esc(it.title||"")}">${esc(it.title||"Untitled")}<span class="wpic" aria-hidden="true">🖼</span></span>`:esc(it.title||"Untitled"); })()}${W()?`<span class="edhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></span>`:""}</div>
         ${it.note?`<div class="no">${rich(it.note)}</div>`:""}
-        ${(it.star||it.map||f.length)?`<div class="meta">${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
+        ${it.shotThumb?`<button type="button" class="shot" data-shot="${esc(it.shot||"")}" data-ptitle="${esc((it.title||"")+" · example shot")}" aria-label="Example shot for ${esc(it.title||"")}"><img src="${esc(it.shotThumb)}" alt=""><span>Get this shot</span></button>`:""}
+        ${(it.star||it.map||f.length||it.photoSpot)?`<div class="meta">${it.photoSpot?`<span class="shotchip">📸 Photo spot</span>`:""}${f.length?`<span class="forchip">${esc(f.length===S.people.length?"Everyone":f.map(id=>me&&id===me.id?"You":pname(id)).join(" + "))}</span>`:""}${it.star?`<span class="star">Low crowd</span>`:""}${it.map?`<a class="linkchip" href="${esc(mapUrl(it.map))}" target="_blank" rel="noopener" data-stop aria-label="Open in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></a>`:""}</div>`:""}
       </div>
       ${W()?`<div class="mv"><button type="button" class="grip" aria-label="Drag to move" title="Drag to move"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button></div>`:""}
     </div>`}).join(""):`<div class="empty">Nothing planned for this day yet.</div>`;
@@ -1243,6 +1248,12 @@ function itemSheet(dayId,index,preset){
     <div class="f"><label for="iMap">Google Maps search</label><input id="iMap" value="${esc(it.map)}" placeholder="Place name + area"><span class="hint">Leave empty for no map link.</span></div>
     <div class="f"><span class="lab">Who's this for</span><div class="pick" id="iFor"><button type="button" data-v="" aria-pressed="${!(it.for||[]).length}">Everyone</button>${S.people.map(p=>`<button type="button" data-v="${esc(p.id)}" aria-pressed="${(it.for||[]).includes(p.id)}">${esc(p.name)}</button>`).join("")}</div><span class="hint">Tag stops that only some of you do, e.g. two people still in Tokyo while the others are already in Kyoto. Everyone sees their own version of the day.</span></div>
     <label class="row small" style="font-weight:600"><input type="checkbox" id="iStar" ${it.star?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> Low-crowd spot</label>
+    <label class="row small" style="font-weight:600"><input type="checkbox" id="iSpot" ${it.photoSpot?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"> 📸 Photo spot</label>
+    <div class="f"><span class="lab">Example shot (optional)</span><div class="row" style="align-items:center;gap:10px">
+      <div id="iShPrev" class="sthumb" style="cursor:default;${it.shotThumb?"":"display:none"}">${it.shotThumb?`<img src="${esc(it.shotThumb)}" alt="">`:""}</div>
+      <label class="btn small plain" style="cursor:pointer">${it.shotThumb?"Change photo":"Add photo"}<input id="iShot" type="file" accept="image/*" hidden></label>
+      ${it.shotThumb?`<button type="button" class="btn small plain" id="iShDel">Remove</button>`:""}</div>
+      <span class="hint">The shot you're going for, e.g. a screenshot from a reel. Everyone sees it on the stop.</span></div>
     ${isNew?"":`<div class="row"><div class="spacer"></div><button class="btn small danger" id="iDel">Delete</button></div>`}
     <button class="btn primary" id="iSave">${isNew?"Add to day":"Save"}</button>`,p=>{
     $("#iFor",p).addEventListener("click",ev=>{const b=ev.target.closest("button");if(!b)return; const box=$("#iFor",p), e0=box.querySelector('[data-v=""]');
@@ -1250,9 +1261,17 @@ function itemSheet(dayId,index,preset){
       b.setAttribute("aria-pressed",String(b.getAttribute("aria-pressed")!=="true"));
       e0.setAttribute("aria-pressed",String(![...box.querySelectorAll('button:not([data-v=""])')].some(y=>y.getAttribute("aria-pressed")==="true"))); });
     const readFor=()=>{ const f=[...$("#iFor",p).querySelectorAll('button[aria-pressed="true"]:not([data-v=""])')].map(b=>b.dataset.v); return f.length===S.people.length?[]:f; };
-    const read=()=>({...it,id:it.id||uid(),time:$("#iTime",p).value.trim(),title:$("#iTitle",p).value.trim(),note:$("#iNote",p).value.trim(),map:$("#iMap",p).value.trim(),star:$("#iStar",p).checked,for:readFor()});
+    const read=()=>({...it,id:it.id||uid(),time:$("#iTime",p).value.trim(),title:$("#iTitle",p).value.trim(),note:$("#iNote",p).value.trim(),map:$("#iMap",p).value.trim(),star:$("#iStar",p).checked,photoSpot:$("#iSpot",p).checked,for:readFor()});
+    let newShot=null, dropShot=false;
+    $("#iShot",p).addEventListener("change",async ev=>{ const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+      try{ const th=await makeThumb(f); newShot=f; newShot._thumb=th; dropShot=false; const pv=$("#iShPrev",p); pv.style.display=""; pv.innerHTML=`<img src="${th}" alt="">`; $("#iSpot",p).checked=true; }catch(e){ toast("Couldn't read that photo"); } });
+    if($("#iShDel",p)) $("#iShDel",p).onclick=()=>{ dropShot=true; newShot=null; $("#iShPrev",p).style.display="none"; toast("Photo will be removed when you save"); };
     $("#iSave",p).onclick=async()=>{
       const v=read(); if(!v.title){toast("Add a name for the stop");return}
+      const oldShot=it.shot||null;
+      if(newShot){ try{ const c=await compressFile(newShot); const ref=await S.db.collection("files").add({data:c.data,type:c.type,by:S.myId,at:Date.now(),vis:["all"],kind:"shot"}); v.shot=ref.id; v.shotThumb=newShot._thumb; }catch(e){ toast("Couldn't upload the photo: "+(e.code||e.message||e)); return; } }
+      else if(dropShot){ v.shot=null; v.shotThumb=null; }
+      if(oldShot&&(newShot||dropShot)) S.db.doc("files/"+oldShot).delete().catch(()=>{});
       const target=$("#iDay",p).value;
       const src=S.days.find(x=>x.id===dayId); const items=[...(src.items||[])];
       if(!isNew) items.splice(index,1);
@@ -1695,6 +1714,7 @@ document.addEventListener("click",async ev=>{
   const day=t.closest("[data-day]"); if(day){S.dayId=day.dataset.day;ls.set("day",S.dayId);render(); return}
   const wpb=t.closest("[data-wp]"); if(wpb){ ev.preventDefault(); ev.stopPropagation(); wpSheet(wpb.dataset.wp,wpb.dataset.wpname); return; }
   if(t.closest(".mv")) return;
+  const shotb=t.closest("[data-shot]"); if(shotb){ const img=shotb.querySelector("img"); if(shotb.dataset.shot) photoSheet(shotb.dataset.shot,shotb.dataset.ptitle,img&&img.src); return; }
   const it=t.closest("[data-item]"); if(it&&W()){itemSheet(S.dayId,+it.dataset.item);return}
   const ex=t.closest("[data-exp]"); if(ex){expenseSheet(ex.dataset.exp,!!t.closest("[data-bankfocus]"));return}
   const tk=t.closest("[data-task]"); if(tk){taskSheet(tk.dataset.task);return}
