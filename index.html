@@ -130,6 +130,17 @@ h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:u
 .day span{display:block;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .day[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .dayhead{display:flex;flex-direction:column;gap:6px}
+.dmap{flex:none;height:min(56vh,460px);border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--fill);margin-bottom:8px;position:relative;z-index:0}
+.dmap .leaflet-control-attribution{font-size:9px}
+.mk{position:relative;width:34px;height:34px;border-radius:50%;background:var(--surface,#fff);border:2px solid var(--accent);display:grid;place-items:center;font-size:17px;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.mk b{position:absolute;top:-7px;right:-8px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent);color:var(--on-accent,#fff);font:700 11px/18px system-ui,sans-serif;text-align:center}
+.mk.home{border-color:#2f7a4f}.mk.home b{background:#2f7a4f}
+.leaflet-tooltip.mklab{background:var(--surface,#fff);color:var(--fg,#111);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font:600 12px system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.25);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.leaflet-tooltip.mklab::before{display:none}
+.dmap:not(.zin) .leaflet-tooltip.mklab{display:none}
+.dmlist li{cursor:pointer}.dmlist li .ti{display:flex;gap:6px;align-items:baseline}
+.dmlist li.miss .rn{background:var(--fill);color:var(--muted)}
+.dmlist li .sub a{color:var(--accent)}
 .route{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0;position:relative}
 .route li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;padding:7px 0;position:relative}
 .route li:not(:last-child)::before{content:"";position:absolute;left:14px;top:30px;bottom:-7px;width:2px;background:var(--accent-line,var(--line))}
@@ -329,6 +340,83 @@ function routeSheet(title,pts,hint){
     ${parts.map((g,k)=>`<a class="btn ${k?"plain":"primary"}" href="${esc(routeUrl(g.map(p=>p.q)))}" target="_blank" rel="noopener">Open in Google Maps${parts.length>1?` (part ${k+1}: ${g[0].label.slice(0,18)} → ${g[g.length-1].label.slice(0,18)})`:""} ↗</a>`).join("")}`);
 }
 const mapUrl = q => "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+// ---- Day map: numbered stops with icons, joined in plan order. Places are found with OpenStreetMap (Nominatim),
+// remembered on this device, and saved onto the stop for everyone when a planner opens the map.
+const STOP_ICONS=[[/disney/i,"🏰"],[/aquarium|kaiyukan/i,"🐋"],[/castle/i,"🏯"],[/onsen|spa world|\bbath\b/i,"♨️"],[/sky building|skytree|tower|observ|harukas|government building/i,"🏙️"],
+  [/shrine|jingu|jingū|inari|torii|taisha|yasaka|hachimangu|sengen/i,"⛩️"],[/temple|-ji\b|\bji\b|dera|byōdō|byodo|kinkaku|hasedera|kōtoku|buddha|katsuoji|hōkokuji|-in\b/i,"🛕"],
+  [/aquarium|museum|clock|factory/i,"🎨"],[/matcha|cafe|café|coffee|parfait|tea|tokichi|tsujiri|crêpe|crepe|mille|bakery|roastery|starbucks/i,"🍵"],
+  [/ramen|lunch|dinner|breakfast|sushi|market|food|eat|kushikatsu|okonomiyaki|takoyaki|soba|udon|sando|yakiniku|katsu|hōtō|itookashi|dekasan|ikspiari/i,"🍜"],
+  [/station|stn\b|airport|nozomi|hikari|shinkansen|bus\b|train|monorail|enoden/i,"🚉"],
+  [/shop|street|arcade|center|centre|loft|uniqlo|don quijote|den-den|akihabara|ginza|daimaru|mall|lucky|yojiya|onitsuka|kappabashi|yokocho|nishiki|pontocho|shinsaibashi|amerikamura|dotonbori|harajuku|takeshita|shibuya|shinjuku|umeda|7t\+|snoopy|komachi/i,"🛍️"],
+  [/park|valley|falls|bamboo|garden|beach|lake|bridge|tunnel|river|cape|ubuyagasaki|alley|lane|crossing|walk/i,"🌿"]];
+const stopIcon = it => it.photoSpot?"📸":((STOP_ICONS.find(([re])=>re.test((it.title||"")+" "+(it.map||"")))||[0,"📍"])[1]);
+const NOT_PLACE=/^(lunch|dinner|breakfast|back to|check in|check out|leave|up early|early start|walk back|return|pack|wake|rest|evening|night|light supper|slow breakfast|drop bags|quick breakfast|straight to|to the|to |train|jr |keihan|hankyu|subway|bus|shinkansen|nozomi|hikari|take |head |option)\b|→/i;
+function dayShownItems(d){ const me=myPerson(), items=d.items||[]; const forOf=it=>Array.isArray(it.for)?it.for.filter(Boolean):[];
+  const mineOnly=!!me&&items.some(it=>forOf(it).length)&&S.planMine!==false;
+  return items.map((it,i)=>[it,i]).filter(([it])=>!mineOnly||!forOf(it).length||forOf(it).includes(me.id)); }
+const stopQuery = it => (it.map||"").trim()||(NOT_PLACE.test(it.title||"")?"":plain(it.title||"").replace(/\(.*?\)/g,"").trim());
+const stayQ = h => { const ad=addressFor(h); return (ad&&ad.en)||h; };
+function mapStops(d){ const pts=[];
+  const prev=S.days.filter(x=>canSeeDay(x)&&x.date<d.date&&x.hotel).sort((a,b)=>a.date<b.date?1:-1)[0];
+  const startH=(prev&&prev.hotel)||d.hotel;
+  if(startH) pts.push({home:true,label:prev&&prev.hotel!==d.hotel?"Start: last night's stay":"Your stay",sub:startH,q:stayQ(startH),icon:"🏨"});
+  dayShownItems(d).forEach(([it,i])=>{ const q=stopQuery(it);
+    if(!q) return; const last=pts[pts.length-1]; if(last&&last.q===q) return;
+    pts.push({idx:i,id:it.id,label:plain(it.title||it.map),sub:it.time||"",q,icon:stopIcon(it),geo:it.geo&&it.geo.q===q?it.geo:null}); });
+  if(d.hotel&&startH&&d.hotel!==startH) pts.push({home:true,label:"Tonight's stay",sub:d.hotel,q:stayQ(d.hotel),icon:"🏨"});
+  return pts; }
+let leafletP=null;
+function loadLeaflet(){ if(window.L) return Promise.resolve(window.L); if(leafletP) return leafletP;
+  leafletP=new Promise((res,rej)=>{ const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    const js=document.createElement("script"); js.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload=()=>res(window.L); js.onerror=()=>{ leafletP=null; rej(new Error("map library didn't load")); }; document.head.appendChild(js); });
+  return leafletP; }
+const GEO_MEM={}; let geoLast=0;
+async function geocode(q,city){
+  const key="geo1:"+q; if(GEO_MEM[key]!==undefined) return GEO_MEM[key];
+  try{ const c=JSON.parse(ls.get(key,"null")); if(c){ GEO_MEM[key]=c.none?null:c; return GEO_MEM[key]; } }catch(e){}
+  const tries=[q]; const head=q.split(",")[0].split(/\s[+&]\s/)[0].trim(); if(head!==q) tries.push(head+(city?", "+city:"")); else if(city&&!q.toLowerCase().includes(city.toLowerCase())) tries.push(q+", "+city);
+  for(const t of tries){ const wait=geoLast+1100-Date.now(); if(wait>0) await new Promise(r=>setTimeout(r,wait)); geoLast=Date.now();
+    try{ const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=en&q="+encodeURIComponent(t)); const j=await r.json();
+      if(j&&j[0]){ const g={lat:+j[0].lat,lng:+j[0].lon}; GEO_MEM[key]=g; ls.set(key,JSON.stringify(g)); return g; } }catch(e){ return undefined; } }
+  GEO_MEM[key]=null; ls.set(key,JSON.stringify({none:1})); return null; }
+async function dayMapSheet(d){
+  const pts=mapStops(d); const city=String(d.city||"").split("→").pop().trim().replace(/\(.*?\)/g,"").trim();
+  const num={}; let c=0; pts.forEach((x,k)=>{ if(!x.home) num[k]=++c; });
+  openSheet(fmtDate(d.date)+" · map",`<div class="dmap" id="dmap" role="img" aria-label="Map of today's stops"></div>
+    <div class="small muted" id="dmStat" role="status">Loading the map…</div>
+    <ol class="route dmlist" id="dmList">${pts.map((p,k)=>`<li data-k="${k}" class="${p.geo?"":"miss"}"><span class="rn">${p.home?"🏨":num[k]}</span><div><div class="ti"><span aria-hidden="true">${p.icon}</span><span>${esc(p.label)}</span></div><div class="sub">${esc(p.sub)}${p.sub?" · ":""}<a href="${esc(mapUrl(p.q))}" target="_blank" rel="noopener">Google Maps ↗</a></div></div></li>`).join("")}</ol>
+    <div class="hint">Lines join the stops in plan order (straight lines, not the real route). Grey numbers couldn't be placed${W()?": tap the stop in the plan and fix its Google Maps search text":""}.</div>`,async p=>{
+    const st=$("#dmStat",p), el=$("#dmap",p); let L;
+    try{ L=await loadLeaflet(); }catch(e){ st.textContent="The map couldn't load. Check your connection, or use the Google Maps links below."; return; }
+    if(!document.body.contains(el)) return;
+    const map=L.map(el,{zoomControl:true,attributionControl:true}).setView([35.0,135.7],6);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles © Esri"}).addTo(map);
+    const zc=()=>el.classList.toggle("zin",map.getZoom()>=11); map.on("zoomend",zc);
+    const line=L.polyline([],{color:getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#c8402f",weight:3,dashArray:"6 6",opacity:.85}).addTo(map);
+    const marks={};
+    const draw=()=>{ const ll=pts.filter(x=>x.geo).map(x=>[x.geo.lat,x.geo.lng]); line.setLatLngs(ll);
+      // Frame the day's stops; a stay far away (e.g. last night's hotel in another city) is still drawn but not zoomed to.
+      const st=pts.filter(x=>x.geo&&!x.home).map(x=>[x.geo.lat,x.geo.lng]); const fb=st.length?st:ll;
+      if(fb.length===1) map.setView(fb[0],15); else if(fb.length>1) map.fitBounds(fb,{padding:[28,28],maxZoom:16}); zc(); };
+    const place=(x,k)=>{ if(!x.geo||marks[k]) return; const n=x.home?"":String(num[k]);
+      const m=L.marker([x.geo.lat,x.geo.lng],{icon:L.divIcon({className:"",html:`<div class="mk${x.home?" home":""}">${x.icon}${n?`<b>${n}</b>`:""}</div>`,iconSize:[34,34],iconAnchor:[17,17]}),title:x.label,keyboard:true})
+        .bindTooltip(esc(x.label),{permanent:true,direction:"right",offset:[16,0],className:"mklab"}).bindPopup(`<strong>${esc(x.label)}</strong>${x.sub?`<br>${esc(x.sub)}`:""}`).addTo(map); marks[k]=m;
+      const li=p.querySelector(`#dmList li[data-k="${k}"]`); if(li) li.classList.remove("miss"); };
+    pts.forEach(place); draw();
+    p.querySelector("#dmList").addEventListener("click",e=>{ if(e.target.closest("a")) return; const li=e.target.closest("li[data-k]"); if(!li) return; const m=marks[li.dataset.k];
+      if(m){ map.setView(m.getLatLng(),Math.max(map.getZoom(),15)); m.openPopup(); el.scrollIntoView({behavior:"smooth",block:"nearest"}); } });
+    const todo=pts.map((x,k)=>[x,k]).filter(([x])=>!x.geo); let done=0, found=[];
+    st.textContent=todo.length?`Finding places… 0/${todo.length}`:`${pts.length} stops`;
+    for(const [x,k] of todo){ if(!document.body.contains(el)) return; const g=await geocode(x.q,city); done++;
+      if(g===undefined){ st.textContent="Couldn't reach the map search. Try again later."; break; }
+      if(g){ x.geo={...g,q:x.q}; place(x,k); draw(); if(x.id) found.push(x); }
+      st.textContent=done<todo.length?`Finding places… ${done}/${todo.length}`:`${pts.filter(x=>x.geo).length} of ${pts.length} stops on the map`; }
+    // Save what was found onto the stops, so everyone else's map opens instantly.
+    if(found.length&&W()){ const cur=S.days.find(x=>x.id===d.id); if(!cur) return; let ch=false;
+      const items=(cur.items||[]).map(it=>{ const f=found.find(x=>x.id===it.id); if(f&&stopQuery(it)===f.q&&!(it.geo&&it.geo.q===f.q)){ ch=true; return {...it,geo:{lat:f.geo.lat,lng:f.geo.lng,q:f.q}}; } return it; });
+      if(ch) try{ await S.db.doc("days/"+d.id).update({items}); }catch(e){} }
+  });
+}
 const todayJST = () => new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Tokyo"});
 const fmtDate = (iso,opt={weekday:"short",day:"numeric",month:"short"}) => { if(!iso) return ""; const [y,m,d]=iso.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)).toLocaleDateString("en-GB",{...opt,timeZone:"UTC"}); };
 const uid = () => Math.random().toString(36).slice(2,10);
@@ -902,7 +990,7 @@ function viewPlan(){
         ${w.kind==="snow"?`<div class="hint" style="margin:6px 0 0">🌨 Snow possible: grippy shoes, and check trains and buses before heading out.</div>`:""}`; })()}
     <div class="row"><span class="chip">${esc(d.city||"")}</span>${vis.length?`<span class="chip soft">🔒 Only ${esc(vis.map(pname).join(", "))}</span>`:""}${S.isOwner?`<button class="linkchip" style="background:none;cursor:pointer" data-act="dayVis">Who can see</button>`:""}${d.hotel?`<a class="linkchip" href="${esc(mapUrl(d.hotel))}" target="_blank" rel="noopener">Stay: ${esc(d.hotel.length>38?d.hotel.slice(0,36)+"…":d.hotel)} ↗</a>`:""}</div>
   </div>
-  ${(()=>{ const n=dayRoute(d).length; return n>=2?`<div class="row"><button class="btn small plain" data-act="dayRoute">🗺 Today's route · ${n} stops</button></div>`:""; })()}
+  ${(()=>{ const n=mapStops(d).filter(x=>!x.home).length, g=dayRoute(d).length; return n>=1?`<div class="row"><button class="btn small plain" data-act="dayMap">🗺 Map · ${n} stops</button>${g>=2?`<button class="btn small plain" data-act="dayRoute">Google Maps route ↗</button>`:""}</div>`:""; })()}
   ${(ad||tix.length||W())?`<div class="row">${ad?`<button class="btn small plain" data-addr="${esc(ad.id)}">🚕 Show hotel address</button>`:W()?`<button class="btn small plain" data-act="newAddr">🏨 Add hotel address</button>`:""}${tix.map(w=>`<button class="btn small plain" data-wallet="${esc(w.id)}">🎫 ${esc(w.title)}</button>`).join("")}</div>`:""}
   ${tr?`<details class="dn"><summary>Getting around today (${(tr.lines||[]).length})</summary><ul>${(tr.lines||[]).map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
   ${notes.length?`<details class="dn"><summary>Day notes (${notes.length})</summary><ul>${notes.map(n=>`<li>${rich(n)}</li>`).join("")}</ul></details>`:""}
@@ -1827,6 +1915,7 @@ document.addEventListener("click",async ev=>{
     case "hideDone": S.hideDone=!S.hideDone; render(); break;
     case "addNote": noteSheet(null); break;
     case "addPerson": personSheet(null); break;
+    case "dayMap": { const d=S.days.find(x=>x.id===S.dayId); if(d) dayMapSheet(d); break; }
     case "dayRoute": { const d=S.days.find(x=>x.id===S.dayId); if(d) routeSheet(fmtDate(d.date)+" route",dayRoute(d),"Stops with a Google Maps search, in the order of the plan. Stops without one are skipped."+(W()?" Add or fix one by tapping the stop.":"")); break; }
     case "tripRoute": { let f=$("#rFrom").value, t=$("#rTo").value; if(f>t) [f,t]=[t,f]; const pts=tripRoute(f,t);
       if(pts.length<2){ toast("Only one stay in those dates. Pick a longer stretch."); break; } routeSheet("Trip route",pts,"Each place is where you sleep. Google Maps draws the route between them."); break; }
