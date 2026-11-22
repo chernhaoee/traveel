@@ -454,7 +454,7 @@ async function dayMapSheet(d){
       if(fb.length===1) map.setView(fb[0],15); else if(fb.length>1) map.fitBounds(fb,{padding:[28,28],maxZoom:16}); zc(); };
     const place=(x,k)=>{ if(!x.geo||marks[k]) return; const n=x.home?"":String(num[k]);
       const m=L.marker([x.geo.lat,x.geo.lng],{draggable:W()&&!x.home&&!!x.id,autoPan:true,icon:L.divIcon({className:"",html:`<div class="mk${x.home?" home":""}">${x.icon}${n?`<b>${n}</b>`:""}</div>`,iconSize:[34,34],iconAnchor:[17,17]}),title:x.label,keyboard:true})
-        .bindTooltip(esc(x.label),{permanent:true,direction:"right",offset:[16,0],className:"mklab"}).bindPopup(`<strong>${esc(x.label)}</strong>${x.sub?`<br>${esc(x.sub)}`:""}`).addTo(map); marks[k]=m;
+        .bindTooltip(esc(x.label),{permanent:true,direction:"right",offset:[16,0],className:"mklab"}).bindPopup(`<strong>${esc(x.label)}</strong>${x.sub?`<br>${esc(x.sub)}`:""}${W()&&!x.home&&x.id?`<br><button type="button" class="btn small plain" data-unpin="${k}" style="margin-top:6px">Remove this pin</button>`:""}`).addTo(map); marks[k]=m;
       // Wrong spot? Planners drag the pin to the right place; it's saved onto the stop for everyone.
       m.on("dragend",async()=>{ const ll=m.getLatLng(); x.geo={lat:+ll.lat.toFixed(6),lng:+ll.lng.toFixed(6),q:x.q,fixed:true}; ls.set("geo2:"+x.q,JSON.stringify({lat:x.geo.lat,lng:x.geo.lng})); GEO_MEM["geo2:"+x.q]={lat:x.geo.lat,lng:x.geo.lng};
         draw(false); const okSave=await saveGeos([x],true); toast(okSave?"Pin moved. Saved for everyone.":"Pin moved on this phone only (couldn't save)."); });
@@ -464,10 +464,18 @@ async function dayMapSheet(d){
     const far=(x,g)=>{ const refs=pts.filter(y=>y!==x&&y.geo); return refs.length>=2&&Math.min(...refs.map(y=>km(y.geo,g)))>80; };
     pts.forEach(x=>{ if(x.geo&&!x.geo.fixed&&!x.home&&far(x,x.geo)){ x.geo=null; ls.set("geo2:"+x.q,JSON.stringify({none:1})); delete GEO_MEM["geo2:"+x.q]; } });
     pts.forEach(place); draw();
-    const pick=li=>{ const m=marks[li.dataset.k]; p.querySelectorAll("#dmList li.on").forEach(x=>x.classList.remove("on"));
+    // Remove a wrong pin: the stop goes grey again, ready to be placed with a tap.
+    el.addEventListener("click",async e=>{ const b=e.target.closest("[data-unpin]"); if(!b) return; const k=+b.dataset.unpin, x=pts[k], m=marks[k]; if(!x||!m) return;
+      map.closePopup(); map.removeLayer(m); delete marks[k]; x.geo=null; ls.set("geo2:"+x.q,JSON.stringify({none:1})); GEO_MEM["geo2:"+x.q]=null;
+      const li=p.querySelector(`#dmList li[data-k="${k}"]`); if(li) li.classList.add("miss"); draw(false);
+      const cur=S.days.find(y=>y.id===d.id); let okSave=false;
+      if(cur&&W()) try{ await S.db.doc("days/"+d.id).update({items:(cur.items||[]).map(it=>{ if(it.id!==x.id) return it; const c={...it}; delete c.geo; return c; })}); okSave=true; }catch(err){}
+      st.textContent=`${pts.filter(y=>y.geo).length} of ${pts.length} stops on the map`; toast(okSave?"Pin removed. Tap the stop in the list to place it again.":"Pin removed on this phone only."); });
+    const pick=li=>{ const m=marks[li.dataset.k], wasOn=li.classList.contains("on"); p.querySelectorAll("#dmList li.on").forEach(x=>x.classList.remove("on"));
       if(!m){ const k=+li.dataset.k, x=pts[k];
         if(!(W()&&x&&x.id)){ toast("Couldn't find this one on the map. Use the pin button for Google Maps."); return; }
-        li.classList.add("on"); el.scrollIntoView({behavior:"smooth",block:"nearest"}); st.textContent=`Tap the map where "${x.label}" is.`; el.style.cursor="crosshair";
+        if(wasOn){ map.off("click"); li.classList.remove("on"); el.style.cursor=""; st.textContent=`${pts.filter(y=>y.geo).length} of ${pts.length} stops on the map`; return; }
+        li.classList.add("on"); el.scrollIntoView({behavior:"smooth",block:"nearest"}); st.textContent=`Tap the map where "${x.label}" is. Tap the stop again to cancel.`; el.style.cursor="crosshair";
         map.off("click"); map.once("click",async ev=>{ el.style.cursor=""; x.geo={lat:+ev.latlng.lat.toFixed(6),lng:+ev.latlng.lng.toFixed(6),q:x.q,fixed:true}; setEye(k,true); place(x,k); draw(false);
           ls.set("geo2:"+x.q,JSON.stringify({lat:x.geo.lat,lng:x.geo.lng})); GEO_MEM["geo2:"+x.q]={lat:x.geo.lat,lng:x.geo.lng};
           const okSave=await saveGeos([x],true); st.textContent=`${pts.filter(y=>y.geo).length} of ${pts.length} stops on the map`; toast(okSave?"Placed. Saved for everyone.":"Placed on this phone only (couldn't save)."); });
