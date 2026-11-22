@@ -140,6 +140,7 @@ h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:u
 @media (prefers-reduced-motion:reduce){.it.flash{animation:none;outline:3px solid var(--accent)}}
 .dmap{flex:none;height:min(56vh,460px);border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--fill);margin-bottom:8px;position:relative;z-index:0}
 .dmap .leaflet-control-attribution{font-size:9px}
+.dmap[data-mstyle="clean"] .leaflet-tile-pane{filter:saturate(1.4) sepia(.12)}
 .mk{position:relative;width:34px;height:34px;border-radius:50%;background:var(--surface,#fff);border:2px solid var(--accent);display:grid;place-items:center;font-size:17px;box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .mk b{position:absolute;top:-7px;right:-8px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent);color:var(--on-accent,#fff);font:700 11px/18px system-ui,sans-serif;text-align:center}
 .mk.home{border-color:#2f7a4f}.mk.home b{background:#2f7a4f}
@@ -405,6 +406,7 @@ function loadLeaflet(){ if(window.L) return Promise.resolve(window.L); if(leafle
 const GEO_MEM={}; let geoLast=0;
 async function geocode(q,city){
   const key="geo2:"+q; if(GEO_MEM[key]!==undefined) return GEO_MEM[key];
+  const cm=q.match(/^\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/); if(cm) return GEO_MEM[key]={lat:+cm[1],lng:+cm[2]};
   try{ const c=JSON.parse(ls.get(key,"null")); if(c){ GEO_MEM[key]=c.none?null:c; return GEO_MEM[key]; } }catch(e){}
   const head=q.split(",")[0].split(/\s[+&]\s/)[0].replace(/\(.*?\)/g,"").trim(); const tries=[q];
   if(head!==q) tries.push(head); (city||"").split("→").map(c=>c.replace(/\(.*?\)/g,"").trim()).filter(Boolean).forEach(c=>{ if(!fold(head).includes(fold(c))) tries.push(head+", "+c); });
@@ -419,18 +421,27 @@ async function geocode(q,city){
   if(!reached) return undefined;
   GEO_MEM[key]=null; ls.set(key,JSON.stringify({none:1})); return null; }
 async function dayMapSheet(d){
+  const saveGeos=async(list,force)=>{ if(!W()) return false; const cur=S.days.find(x=>x.id===d.id); if(!cur) return false; let ch=false;
+    const items=(cur.items||[]).map(it=>{ const f=list.find(x=>x.id===it.id); if(f&&stopQuery(it)===f.q&&(force||!(it.geo&&it.geo.q===f.q))){ ch=true; const g={lat:f.geo.lat,lng:f.geo.lng,q:f.q}; if(f.geo.fixed) g.fixed=true; return {...it,geo:g}; } return it; });
+    if(!ch) return true; try{ await S.db.doc("days/"+d.id).update({items}); return true; }catch(e){ return false; } };
   const pts=mapStops(d); const city=String(d.city||"");
   const num={}; let c=0; pts.forEach((x,k)=>{ if(!x.home) num[k]=++c; });
   openSheet(fmtDate(d.date)+" · map",`<div class="dmap" id="dmap" role="img" aria-label="Map of today's stops"></div>
     <div class="small muted" id="dmStat" role="status">Loading the map…</div>
-    <div class="dmtools"><button type="button" class="btn small plain" data-eyeall="1">Show all</button><button type="button" class="btn small plain" data-eyeall="0">Hide all</button><span class="small muted">Tap 👁 to pick which stops to show, e.g. just 2 → 3</span></div>
+    <div class="dmtools"><div class="seg" role="group" aria-label="Map style" style="margin:0"><button type="button" data-mstyle="clean" aria-pressed="${(ls.get("mapStyle","clean"))==="clean"}">Clean</button><button type="button" data-mstyle="street" aria-pressed="${ls.get("mapStyle","clean")==="street"}">Street</button></div><button type="button" class="btn small plain" data-eyeall="1">Show all</button><button type="button" class="btn small plain" data-eyeall="0">Hide all</button><span class="small muted">Tap 👁 to pick which stops to show, e.g. just 2 → 3</span></div>
     <ol class="route dmlist" id="dmList">${pts.map((p,k)=>`<li data-k="${k}" class="${p.geo?"":"miss"}" tabindex="0" role="button" aria-label="Show ${esc(p.label)} on the map"><span class="rn">${p.home?"🏨":num[k]}</span><div><div class="ti"><span aria-hidden="true">${p.icon}</span><span>${esc(p.label)}</span></div>${p.sub?`<div class="sub">${esc(p.sub)}</div>`:""}</div><button type="button" class="gmap eye" data-eye="${k}" aria-pressed="true" aria-label="Show ${esc(p.label)} on the map" title="Show / hide on the map"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="eo" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle class="eo" cx="12" cy="12" r="3"/><path class="ec" d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/></svg></button><a class="gmap" href="${esc(mapUrl(p.q))}" target="_blank" rel="noopener" aria-label="Open ${esc(p.label)} in Google Maps" title="Open in Google Maps"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></a></li>`).join("")}</ol>
-    <div class="hint">Lines join the stops in plan order (straight lines, not the real route). Grey numbers couldn't be placed${W()?": tap the stop in the plan and fix its Google Maps search text":""}.</div>`,async p=>{
+    <div class="hint">Lines join the stops in plan order (straight lines, not the real route). Grey numbers couldn't be placed${W()?": tap one, then tap the map where it is":""}.${W()?" <strong>Pin in the wrong spot?</strong> Hold it and drag it to the right place; it saves for everyone.":""}</div>`,async p=>{
     const st=$("#dmStat",p), el=$("#dmap",p); let L;
     try{ L=await loadLeaflet(); }catch(e){ st.textContent="The map couldn't load. Check your connection, or use the Google Maps links below."; return; }
     if(!document.body.contains(el)) return;
     const map=L.map(el,{zoomControl:true,attributionControl:true}).setView([35.0,135.7],6);
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles © Esri"}).addTo(map);
+    // Two looks: "Clean" (a quiet grey canvas with English labels, dark at night) or "Street" (full street map).
+    const ESRI="https://server.arcgisonline.com/ArcGIS/rest/services/", dark=document.documentElement.dataset.theme==="dark"||(document.documentElement.dataset.theme!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);
+    const STYLES={clean:()=>{ const g=dark?"Dark":"Light"; return [L.tileLayer(ESRI+`Canvas/World_${g}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,{maxNativeZoom:16,maxZoom:19,attribution:"Tiles © Esri"}),L.tileLayer(ESRI+`Canvas/World_${g}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,{maxNativeZoom:16,maxZoom:19,pane:"overlayPane"})]; },
+      street:()=>[L.tileLayer(ESRI+"World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles © Esri"})]};
+    let tiles=[]; const setStyle=k=>{ tiles.forEach(t=>map.removeLayer(t)); tiles=(STYLES[k]||STYLES.clean)(); tiles.forEach(t=>t.addTo(map)); el.dataset.mstyle=k; ls.set("mapStyle",k);
+      p.querySelectorAll("[data-mstyle]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.mstyle===k))); };
+    setStyle(ls.get("mapStyle","clean"));
     const zc=()=>el.classList.toggle("zin",map.getZoom()>=11); map.on("zoomend",zc);
     const line=L.polyline([],{color:getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#c8402f",weight:3,dashArray:"6 6",opacity:.85}).addTo(map);
     const marks={};
@@ -442,29 +453,41 @@ async function dayMapSheet(d){
       const st=vis.filter(([x])=>!x.home).map(([x])=>[x.geo.lat,x.geo.lng]); const fb=st.length?st:ll;
       if(fb.length===1) map.setView(fb[0],15); else if(fb.length>1) map.fitBounds(fb,{padding:[28,28],maxZoom:16}); zc(); };
     const place=(x,k)=>{ if(!x.geo||marks[k]) return; const n=x.home?"":String(num[k]);
-      const m=L.marker([x.geo.lat,x.geo.lng],{icon:L.divIcon({className:"",html:`<div class="mk${x.home?" home":""}">${x.icon}${n?`<b>${n}</b>`:""}</div>`,iconSize:[34,34],iconAnchor:[17,17]}),title:x.label,keyboard:true})
+      const m=L.marker([x.geo.lat,x.geo.lng],{draggable:W()&&!x.home&&!!x.id,autoPan:true,icon:L.divIcon({className:"",html:`<div class="mk${x.home?" home":""}">${x.icon}${n?`<b>${n}</b>`:""}</div>`,iconSize:[34,34],iconAnchor:[17,17]}),title:x.label,keyboard:true})
         .bindTooltip(esc(x.label),{permanent:true,direction:"right",offset:[16,0],className:"mklab"}).bindPopup(`<strong>${esc(x.label)}</strong>${x.sub?`<br>${esc(x.sub)}`:""}`).addTo(map); marks[k]=m;
+      // Wrong spot? Planners drag the pin to the right place; it's saved onto the stop for everyone.
+      m.on("dragend",async()=>{ const ll=m.getLatLng(); x.geo={lat:+ll.lat.toFixed(6),lng:+ll.lng.toFixed(6),q:x.q,fixed:true}; ls.set("geo2:"+x.q,JSON.stringify({lat:x.geo.lat,lng:x.geo.lng})); GEO_MEM["geo2:"+x.q]={lat:x.geo.lat,lng:x.geo.lng};
+        draw(false); const okSave=await saveGeos([x],true); toast(okSave?"Pin moved. Saved for everyone.":"Pin moved on this phone only (couldn't save)."); });
       const li=p.querySelector(`#dmList li[data-k="${k}"]`); if(li) li.classList.remove("miss"); };
+    const km=(a,b)=>{ const R=6371,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r; return 2*R*Math.asin(Math.sqrt(Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)**2)); };
+    // A loose name can match a same-named place elsewhere in Japan: drop anything 80 km+ from every other stop today.
+    const far=(x,g)=>{ const refs=pts.filter(y=>y!==x&&y.geo); return refs.length>=2&&Math.min(...refs.map(y=>km(y.geo,g)))>80; };
+    pts.forEach(x=>{ if(x.geo&&!x.geo.fixed&&!x.home&&far(x,x.geo)){ x.geo=null; ls.set("geo2:"+x.q,JSON.stringify({none:1})); delete GEO_MEM["geo2:"+x.q]; } });
     pts.forEach(place); draw();
     const pick=li=>{ const m=marks[li.dataset.k]; p.querySelectorAll("#dmList li.on").forEach(x=>x.classList.remove("on"));
-      if(!m){ toast("Couldn't find this one on the map. Use the pin button for Google Maps."); return; }
+      if(!m){ const k=+li.dataset.k, x=pts[k];
+        if(!(W()&&x&&x.id)){ toast("Couldn't find this one on the map. Use the pin button for Google Maps."); return; }
+        li.classList.add("on"); el.scrollIntoView({behavior:"smooth",block:"nearest"}); st.textContent=`Tap the map where "${x.label}" is.`; el.style.cursor="crosshair";
+        map.off("click"); map.once("click",async ev=>{ el.style.cursor=""; x.geo={lat:+ev.latlng.lat.toFixed(6),lng:+ev.latlng.lng.toFixed(6),q:x.q,fixed:true}; setEye(k,true); place(x,k); draw(false);
+          ls.set("geo2:"+x.q,JSON.stringify({lat:x.geo.lat,lng:x.geo.lng})); GEO_MEM["geo2:"+x.q]={lat:x.geo.lat,lng:x.geo.lng};
+          const okSave=await saveGeos([x],true); st.textContent=`${pts.filter(y=>y.geo).length} of ${pts.length} stops on the map`; toast(okSave?"Placed. Saved for everyone.":"Placed on this phone only (couldn't save)."); });
+        return; }
       li.classList.add("on"); el.scrollIntoView({behavior:"smooth",block:"nearest"}); map.flyTo(m.getLatLng(),Math.max(map.getZoom(),16),{duration:.6}); setTimeout(()=>m.openPopup(),650); };
     const setEye=(k,on)=>{ on?off.delete(k):off.add(k); const b=p.querySelector(`[data-eye="${k}"]`); if(b){ b.setAttribute("aria-pressed",String(on)); b.closest("li").classList.toggle("off",!on); } };
-    p.querySelector(".dmtools").addEventListener("click",e=>{ const b=e.target.closest("[data-eyeall]"); if(!b) return; const on=b.dataset.eyeall==="1"; pts.forEach((x,k)=>setEye(k,on)); draw(on); });
+    p.querySelector(".dmtools").addEventListener("click",e=>{ const sb=e.target.closest("[data-mstyle]"); if(sb){ setStyle(sb.dataset.mstyle); return; } const b=e.target.closest("[data-eyeall]"); if(!b) return; const on=b.dataset.eyeall==="1"; pts.forEach((x,k)=>setEye(k,on)); draw(on); });
     p.querySelector("#dmList").addEventListener("click",e=>{ if(e.target.closest("a")) return; const eb=e.target.closest("[data-eye]");
       if(eb){ const k=+eb.dataset.eye; setEye(k,off.has(k)); draw(true); return; }
       const li=e.target.closest("li[data-k]"); if(!li) return; if(off.has(+li.dataset.k)){ setEye(+li.dataset.k,true); draw(false); } pick(li); });
     p.querySelector("#dmList").addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ")&&e.target.matches("li[data-k]")){ e.preventDefault(); pick(e.target); } });
-    const todo=pts.map((x,k)=>[x,k]).filter(([x])=>!x.geo); let done=0, found=[];
+    const todo=pts.map((x,k)=>[x,k]).filter(([x])=>!x.geo).sort((a,b)=>(b[0].home?1:0)-(a[0].home?1:0)); let done=0, found=[];
     st.textContent=todo.length?`Finding places… 0/${todo.length}`:`${pts.length} stops`;
     for(const [x,k] of todo){ if(!document.body.contains(el)) return; const g=await geocode(x.q,city); done++;
       if(g===undefined){ st.textContent="Couldn't reach the map search. Try again later."; break; }
-      if(g){ x.geo={...g,q:x.q}; place(x,k); draw(!off.size); if(x.id) found.push(x); }
+      if(g&&!x.home&&far(x,g)){ delete GEO_MEM["geo2:"+x.q]; ls.set("geo2:"+x.q,JSON.stringify({none:1})); }
+      else if(g){ x.geo={...g,q:x.q}; place(x,k); draw(!off.size); if(x.id) found.push(x); }
       st.textContent=done<todo.length?`Finding places… ${done}/${todo.length}`:`${pts.filter(x=>x.geo).length} of ${pts.length} stops on the map`; }
     // Save what was found onto the stops, so everyone else's map opens instantly.
-    if(found.length&&W()){ const cur=S.days.find(x=>x.id===d.id); if(!cur) return; let ch=false;
-      const items=(cur.items||[]).map(it=>{ const f=found.find(x=>x.id===it.id); if(f&&stopQuery(it)===f.q&&!(it.geo&&it.geo.q===f.q)){ ch=true; return {...it,geo:{lat:f.geo.lat,lng:f.geo.lng,q:f.q}}; } return it; });
-      if(ch) try{ await S.db.doc("days/"+d.id).update({items}); }catch(e){} }
+    if(found.length) saveGeos(found,false);
   });
 }
 const todayJST = () => new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Tokyo"});
