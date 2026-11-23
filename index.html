@@ -396,8 +396,19 @@ function searchSheet(){
       out.onclick=e=>{ const b=e.target.closest("[data-go]"); if(!b) return; const r=res[+b.dataset.go]; closeSheet(); goToStop(r.d.id,r.i); }; };
     inp.addEventListener("input",run); run(); });
 }
-function goToStop(dayId,i){ S.tab="plan"; ls.set("tab","plan"); S.dayId=dayId; render();
-  requestAnimationFrame(()=>{ const el=i>=0&&document.getElementById("it-"+i); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } else window.scrollTo({top:0,behavior:"smooth"}); }); }
+function goToStop(dayId,i){
+  const a=document.activeElement; if(a&&a.blur) a.blur(); // close the phone keyboard first, or its resize cancels the scroll
+  S.tab="plan"; ls.set("tab","plan"); S.dayId=dayId; render();
+  if(!(i>=0)){ window.scrollTo({top:0,behavior:"smooth"}); return; }
+  let stop=false, n=0, flashed=false; const quit=()=>{ stop=true; };
+  addEventListener("touchstart",quit,{once:true,passive:true}); addEventListener("wheel",quit,{once:true,passive:true});
+  const go=()=>{ if(stop) return; const el=document.getElementById("it-"+i);
+    if(el){ const r=el.getBoundingClientRect(), vh=(window.visualViewport&&visualViewport.height)||innerHeight;
+      window.scrollTo({top:Math.max(0,scrollY+r.top-Math.max(80,(vh-r.height)/2)),behavior:"auto"});
+      if(!flashed){ flashed=true; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } }
+    // the keyboard closing, photos loading or a live update can move things: re-aim a few times over ~1s
+    if(++n<5) setTimeout(go,n===1?120:250); else { removeEventListener("touchstart",quit); removeEventListener("wheel",quit); } };
+  requestAnimationFrame(go); }
 let leafletP=null;
 function loadLeaflet(){ if(window.L) return Promise.resolve(window.L); if(leafletP) return leafletP;
   leafletP=new Promise((res,rej)=>{ const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
