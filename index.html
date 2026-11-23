@@ -723,9 +723,14 @@ function render(){
   document.querySelector("nav.tabs").hidden=!!gate;
   if(gate){ el.innerHTML=gate; return; }
   html+=({plan:viewPlan,spend:viewSpend,todo:viewTodo,notes:viewNotes,trip:viewTrip})[S.tab]();
+  // A live update, the exchange rate refreshing when you come back to the tab, etc. re-draws the screen: keep your place
+  const view=S.tab+"|"+S.dayId, y=window.scrollY, same=render.lastView===view; render.lastView=view;
   el.innerHTML=html;
   if(S.tab==="trip") drawQR();
-  if(S.tab==="plan"){const sel=el.querySelector('.day[aria-pressed="true"]'); if(sel) sel.scrollIntoView({block:"nearest",inline:"center"});}
+  if(S.tab==="plan"){ const sel=el.querySelector('.day[aria-pressed="true"]'), strip=sel&&sel.closest(".days");
+    // centre the chosen day sideways only (scrollIntoView also scrolled the whole page back up to the strip)
+    if(strip){ const r=sel.getBoundingClientRect(), sr=strip.getBoundingClientRect(); strip.scrollLeft+= (r.left-sr.left)-(sr.width-r.width)/2; } }
+  if(same&&Math.abs(window.scrollY-y)>2) window.scrollTo(0,y);
 }
 const W = () => S.canWrite!==false && !!S.db;
 
